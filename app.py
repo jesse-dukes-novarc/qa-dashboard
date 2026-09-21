@@ -202,7 +202,7 @@ with tab1:
 # =============================================================================
 with tab2:
     st.title("📈 Testing Estimation versus Actual Duration")
-    st.caption("Includes Release Candidate (RC) iterations tracking")
+    st.caption("The Blue bars represent the Estimated QA Days, the Purple bars represent the Actual QA Days, and the Green bars represent the Original Estimate multiplied by the number of Release Candidates as testing is repeated for each rc. The Orange line represents the Number of Release Candidates.")
 
     fig_combo = make_subplots(specs=[[{"secondary_y": True}]])
 
