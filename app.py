@@ -8,11 +8,11 @@ from streamlit_gsheets import GSheetsConnection
 st.set_page_config(page_title="QA Project Dashboard", layout="wide", page_icon="📊")
 
 # -----------------------------------------------------------------------------
-# 1. DYNAMIC DATA LOADER (READ-ONLY)
+# 1. DYNAMIC DATA LOADER (READ-ONLY & RESILIENT TO ADDED COLUMNS)
 # -----------------------------------------------------------------------------
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=0)  # TTL set to 0 during dev to prevent stale cache errors
 def load_data():
     def parse_worksheet(worksheet_name):
         try:
@@ -25,38 +25,55 @@ def load_data():
             st.error(f"❌ Worksheet '{worksheet_name}' is empty.")
             st.stop()
 
-        # Locate row containing 'Project Name'
+        # Step 1: Search for EXACT "project name" cell match to skip KPI/summary rows 1-6
         header_idx = None
         for idx, row in raw_df.iterrows():
-            clean_cells = [str(val).replace('\xa0', ' ').strip().lower() for val in row.values]
-            if any("project name" in cell for cell in clean_cells):
+            clean_cells = [str(val).replace('\xa0', ' ').strip().lower() for val in row.values if pd.notna(val)]
+            if any(cell == "project name" for cell in clean_cells):
                 header_idx = idx
                 break
 
+        # Fallback: Substring search if exact match isn't found
         if header_idx is None:
-            st.error(f"❌ Could not find 'Project Name' row in '{worksheet_name}'.")
+            for idx, row in raw_df.iterrows():
+                clean_cells = [str(val).replace('\xa0', ' ').strip().lower() for val in row.values if pd.notna(val)]
+                if any("project name" in cell for cell in clean_cells):
+                    header_idx = idx
+                    break
+
+        if header_idx is None:
+            st.error(f"❌ Could not find a 'Project Name' header row in worksheet: **'{worksheet_name}'**.")
             st.stop()
 
-        # Promote row to headers & clean column names
+        # Step 2: Extract header row and clean column names
         headers = [str(val).replace('\xa0', ' ').strip() for val in raw_df.iloc[header_idx].values]
         df = raw_df.iloc[header_idx + 1:].copy()
         df.columns = headers
 
-        # Remove unnamed or NaN columns
-        valid_cols = [c for c in df.columns if c and not str(c).lower().startswith("unnamed") and str(c).lower() != "nan"]
-        df = df.loc[:, valid_cols]
+        # Step 3: Strip blank/unnamed columns safely
+        valid_col_indices = []
+        for i, col_name in enumerate(df.columns):
+            c_str = str(col_name).strip()
+            if c_str and not c_str.lower().startswith("unnamed") and c_str.lower() != "nan":
+                valid_col_indices.append(i)
+                
+        df = df.iloc[:, valid_col_indices]
 
-        # Standardize Project Name column header
+        # Step 4: Standardize 'Project Name' column
         matching_cols = [c for c in df.columns if str(c).strip().lower() == "project name"]
         if matching_cols:
             df = df.rename(columns={matching_cols[0]: "Project Name"})
+        else:
+            st.error(f"❌ Could not isolate 'Project Name' in '{worksheet_name}'. Found columns: {list(df.columns)}")
+            st.stop()
 
-        # Filter empty project rows
+        # Step 5: Remove empty project rows
         df["Project Name"] = df["Project Name"].astype(str).str.strip()
         df = df[~df["Project Name"].str.lower().isin(["nan", "none", "", "null"])]
 
         return df
 
+    # Load both worksheets
     df_projects = parse_worksheet("Projects")
     df_ratings = parse_worksheet("Ratings")
 
@@ -66,12 +83,12 @@ def load_data():
     if "Completion Date" in df_projects.columns:
         df_projects["Completion Date"] = pd.to_datetime(df_projects["Completion Date"], errors="coerce")
 
-    # Merge Release Candidates count if in Ratings
+    # Merge Release Candidates count if in Ratings and not in Projects
     if "Number of Release Candidates" in df_ratings.columns and "Number of Release Candidates" not in df_projects.columns:
-        rc_data = df_ratings[["Project Name", "Number of Release Candidates"]]
+        rc_data = df_ratings[["Project Name", "Number of Release Candidates"]].drop_duplicates(subset=["Project Name"])
         df_projects = pd.merge(df_projects, rc_data, on="Project Name", how="left")
 
-    # Coerce numeric fields and clean formula errors (#VALUE!)
+    # Coerce numeric fields and resolve #VALUE! formula errors to 0.0
     duration_cols = ["Estimated QA Days", "Actual QA Days", "QA Estimate rc Dependant", "Number of Release Candidates"]
     for col in duration_cols:
         if col in df_projects.columns:
@@ -126,14 +143,9 @@ with tab1:
 
     st.subheader("Project Inventory")
     
-    # Columns to render in the summary grid
-    summary_cols = [c for c in [
-        "Project Name", "Status", "Start Date", "Completion Date", 
-        "Pre/Robustness", "Welding Inspection Required", "Number of Welds Tested", "QA Release Document"
-    ] if c in df_filtered.columns]
-
+    # Automatically displays all project columns, including any newly added columns
     st.dataframe(
-        df_filtered[summary_cols],
+        df_filtered,
         column_config={
             "Start Date": st.column_config.DateColumn("Start Date", format="YYYY-MM-DD"),
             "Completion Date": st.column_config.DateColumn("Completion Date", format="YYYY-MM-DD"),
@@ -177,7 +189,7 @@ with tab1:
             st.warning("No rating record found in the Ratings sheet for this project.")
 
     with col_chart:
-        st.markdown(f"#### Performance Radar")
+        st.markdown("#### Performance Radar")
         if not project_rating_row.empty:
             categories = ["Documents Provided", "Robot Availability", "Bundle Preparation", "Software Support"]
             
