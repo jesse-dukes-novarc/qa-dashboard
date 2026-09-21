@@ -340,7 +340,7 @@ with tab3:
         name="Bugs Resolved",
         orientation='h',
         marker_color="#4caf50",
-        width=0.3
+        width=0.5
     ))
 
     fig_bugs.update_layout(
