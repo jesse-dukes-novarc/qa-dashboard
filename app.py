@@ -155,19 +155,37 @@ with tab1:
                 try: scores.append(float(val))
                 except (ValueError, TypeError): scores.append(0.0)
 
-            fig_radar = go.Figure(go.Scatterpolar(
-                r=scores + [scores[0]],
-                theta=categories + [categories[0]],
-                fill='toself',
-                name=selected_project,
-                line_color='#0068c9'
-            ))
-            fig_radar.update_layout(
-                polar=dict(radialaxis=dict(visible=True, range=[0, 5])),
-                showlegend=False,
-                margin=dict(l=40, r=40, t=20, b=20)
+    fig_radar = go.Figure(go.Scatterpolar(
+        r=scores + [scores[0]],
+        theta=categories + [categories[0]],
+        fill='toself',
+        name=selected_project,
+     line_color='#0068c9'
+    ))
+
+    fig_radar.update_layout(
+       polar=dict(
+           # Transparent chart background for dark mode
+           bgcolor="rgba(0, 0, 0, 0)",
+           radialaxis=dict(
+               visible=True,
+               range=[0, 5],
+               # 1. Scale numbers color (0, 1, 2, 3, 4, 5)
+               tickfont=dict(color="white", size=12),
+               gridcolor="#444444"  # Optional: grid line color
+            ),
+            angularaxis=dict(
+                # 2. Outer category labels color (Documents Provided, etc.)
+                tickfont=dict(color="white", size=12)
             )
-            st.plotly_chart(fig_radar, use_container_width=True)
+      ),
+      paper_bgcolor="rgba(0, 0, 0, 0)",
+      plot_bgcolor="rgba(0, 0, 0, 0)",
+      showlegend=False,
+      margin=dict(l=40, r=40, t=20, b=20)
+    )
+
+    st.plotly_chart(fig_radar, use_container_width=True)
 
 # =============================================================================
 # TAB 2: ESTIMATION VS ACTUAL DURATION (COMBO CHART)
