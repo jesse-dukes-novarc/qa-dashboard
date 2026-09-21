@@ -2,62 +2,92 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from datetime import datetime, timedelta
+from datetime import datetime
 from streamlit_gsheets import GSheetsConnection
 
 st.set_page_config(page_title="QA Project Dashboard", layout="wide", page_icon="📊")
 
-# -----------------------------------------------------------------------------
-# 1. DATA LOADING & FALLBACK HANDLING
-# -----------------------------------------------------------------------------
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-@st.cache_data(ttl=60)
+# TTL set to 0 during development to prevent cached KeyError states
+@st.cache_data(ttl=0)
 def load_data():
     def parse_worksheet(worksheet_name):
-        # 1. Read sheet without assuming a fixed header row position
-        raw_df = conn.read(worksheet=worksheet_name, header=None)
-        
-        # 2. Locate the row index containing "Project Name"
-        header_idx = None
-        for idx, row in raw_df.iterrows():
-            if row.astype(str).str.contains("Project Name", case=False).any():
-                header_idx = idx
-                break
-        
-        if header_idx is None:
-            st.error(f"Could not find a 'Project Name' column in the '{worksheet_name}' worksheet.")
+        try:
+            # 1. Read sheet without assuming header position
+            raw_df = conn.read(worksheet=worksheet_name, header=None)
+        except Exception as err:
+            st.error(f"❌ Failed to reach worksheet '{worksheet_name}'. Verify tab name in Google Sheets. Error: {err}")
             st.stop()
             
-        # 3. Promote that row to column headers and strip extra whitespace
-        headers = raw_df.iloc[header_idx].astype(str).str.strip()
+        if raw_df is None or raw_df.empty:
+            st.error(f"❌ Worksheet '{worksheet_name}' is empty.")
+            st.stop()
+
+        # 2. Locate row index containing 'Project Name' (case-insensitive & handles non-breaking spaces)
+        header_idx = None
+        for idx, row in raw_df.iterrows():
+            clean_row = (
+                row.astype(str)
+                .str.replace('\xa0', ' ', regex=False)
+                .str.strip()
+                .str.lower()
+            )
+            if any("project name" in val for val in clean_row):
+                header_idx = idx
+                break
+
+        if header_idx is None:
+            st.error(f"❌ Could not find a row containing 'Project Name' in tab: **'{worksheet_name}'**.")
+            st.write("First 10 rows retrieved from Google Sheets for inspection:")
+            st.dataframe(raw_df.head(10))
+            st.stop()
+
+        # 3. Promote detected row to column headers
+        headers = (
+            raw_df.iloc[header_idx]
+            .astype(str)
+            .str.replace('\xa0', ' ', regex=False)
+            .str.strip()
+        )
         df = raw_df.iloc[header_idx + 1:].copy()
         df.columns = headers
-        
-        # 4. Clean out empty columns and filter valid project rows
-        df = df.loc[:, ~df.columns.str.startswith("Unnamed")]
-        df = df.loc[:, df.columns != "nan"]
-        df = df.dropna(subset=["Project Name"]).copy()
+
+        # 4. Clean out NaN and Unnamed junk columns
+        df = df.loc[:, df.columns.notna()]
+        df = df.loc[:, ~df.columns.str.lower().startswith("unnamed")]
+        df = df.loc[:, ~df.columns.str.lower().startswith("nan")]
+
+        # 5. Locate and standardize 'Project Name' column key
+        matching_cols = [c for c in df.columns if c.lower() == "project name"]
+        if not matching_cols:
+            st.error(f"❌ Header mismatch in '{worksheet_name}'. Detected columns: `{df.columns.tolist()}`")
+            st.stop()
+            
+        df = df.rename(columns={matching_cols[0]: "Project Name"})
+
+        # 6. Filter out blank rows
         df["Project Name"] = df["Project Name"].astype(str).str.strip()
-        
+        df = df[df["Project Name"].str.lower().isin(["nan", "none", ""]) == False]
+
         return df
 
-    # Load both tabs dynamically
+    # Parse both tabs
     df_projects = parse_worksheet("Projects")
     df_ratings = parse_worksheet("Ratings")
 
-    # Format Dates safely
+    # Dates
     if "Start Date" in df_projects.columns:
         df_projects["Start Date"] = pd.to_datetime(df_projects["Start Date"], errors="coerce")
     if "Completion Date" in df_projects.columns:
         df_projects["Completion Date"] = pd.to_datetime(df_projects["Completion Date"], errors="coerce")
 
-    # Merge Release Candidates count if stored in Ratings sheet
+    # Merge Release Candidates from Ratings if present
     if "Number of Release Candidates" in df_ratings.columns and "Number of Release Candidates" not in df_projects.columns:
         rc_data = df_ratings[["Project Name", "Number of Release Candidates"]]
         df_projects = pd.merge(df_projects, rc_data, on="Project Name", how="left")
 
-    # Ensure numeric columns are converted safely for the Plotly charts
+    # Numeric Columns for Plotly Charts
     duration_cols = ["Estimated QA Days", "Actual QA Days", "QA Estimate rc Dependant", "Number of Release Candidates"]
     for col in duration_cols:
         if col in df_projects.columns:
@@ -66,6 +96,9 @@ def load_data():
             df_projects[col] = 0.0
 
     return df_projects, df_ratings
+
+# Load data without wrapping try/except so clear errors display directly on page
+df_projects, df_ratings = load_data()
 
 try:
     df_projects, df_ratings = load_data()
