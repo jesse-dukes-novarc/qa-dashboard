@@ -152,40 +152,42 @@ with tab1:
             scores = []
             for cat in categories:
                 val = project_rating_row.iloc[0].get(cat, 0)
-                try: scores.append(float(val))
-                except (ValueError, TypeError): scores.append(0.0)
+                try: 
+                    scores.append(float(val))
+                except (ValueError, TypeError): 
+                    scores.append(0.0)
 
-    fig_radar = go.Figure(go.Scatterpolar(
-        r=scores + [scores[0]],
-        theta=categories + [categories[0]],
-        fill='toself',
-        name=selected_project,
-     line_color='#0068c9'
-    ))
+            fig_radar = go.Figure(go.Scatterpolar(
+                r=scores + [scores[0]],
+                theta=categories + [categories[0]],
+                fill='toself',
+                name=selected_project,
+                line_color='#0068c9'
+            ))
 
-    fig_radar.update_layout(
-       polar=dict(
-           # Transparent chart background for dark mode
-           bgcolor="rgba(0, 0, 0, 0)",
-           radialaxis=dict(
-               visible=True,
-               range=[0, 5],
-               # 1. Scale numbers color (0, 1, 2, 3, 4, 5)
-               tickfont=dict(color="black", size=12),
-               gridcolor="#444444"  # Optional: grid line color
-            ),
-            angularaxis=dict(
-                # 2. Outer category labels color (Documents Provided, etc.)
-                tickfont=dict(color="black", size=12)
+            fig_radar.update_layout(
+                polar=dict(
+                    bgcolor="white",  # White background inside the polar circle
+                    radialaxis=dict(
+                        visible=True,
+                        range=[0, 5],
+                        tickfont=dict(color="black", size=11),  # Black scale numbers (0-5) on white
+                        gridcolor="#d3d3d3"  # Subtle gray radial grid lines
+                    ),
+                    angularaxis=dict(
+                        tickfont=dict(color="white", size=12),  # White text for outer category labels
+                        gridcolor="#444444"
+                    )
+                ),
+                paper_bgcolor="rgba(0, 0, 0, 0)",
+                plot_bgcolor="rgba(0, 0, 0, 0)",
+                showlegend=False,
+                margin=dict(l=40, r=40, t=20, b=20)
             )
-      ),
-      paper_bgcolor="rgba(0, 0, 0, 0)",
-      plot_bgcolor="rgba(0, 0, 0, 0)",
-      showlegend=False,
-      margin=dict(l=40, r=40, t=20, b=20)
-    )
 
-    st.plotly_chart(fig_radar, use_container_width=True)
+            st.plotly_chart(fig_radar, use_container_width=True)
+        else:
+            st.info("No rating data available for this project.")
 
 # =============================================================================
 # TAB 2: ESTIMATION VS ACTUAL DURATION (COMBO CHART)
