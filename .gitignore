@@ -1,0 +1,13 @@
+# Python environment & cache
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+ENV/
+
+# Streamlit secrets (Do not commit passwords or API keys)
+.streamlit/secrets.toml
+
+# OS junk files
+.DS_Store
+Thumbs.db
