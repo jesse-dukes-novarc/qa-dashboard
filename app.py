@@ -14,32 +14,56 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 @st.cache_data(ttl=60)
 def load_data():
-    # Read 'Projects' tab
-    projects_raw = conn.read(worksheet="Projects", header=6)
-    df_projects = projects_raw.dropna(subset=["Project Name"]).copy()
-    
-    # Dates
-    df_projects["Start Date"] = pd.to_datetime(df_projects["Start Date"], errors="coerce")
-    df_projects["Completion Date"] = pd.to_datetime(df_projects["Completion Date"], errors="coerce")
+    def parse_worksheet(worksheet_name):
+        # 1. Read sheet without assuming a fixed header row position
+        raw_df = conn.read(worksheet=worksheet_name, header=None)
+        
+        # 2. Locate the row index containing "Project Name"
+        header_idx = None
+        for idx, row in raw_df.iterrows():
+            if row.astype(str).str.contains("Project Name", case=False).any():
+                header_idx = idx
+                break
+        
+        if header_idx is None:
+            st.error(f"Could not find a 'Project Name' column in the '{worksheet_name}' worksheet.")
+            st.stop()
+            
+        # 3. Promote that row to column headers and strip extra whitespace
+        headers = raw_df.iloc[header_idx].astype(str).str.strip()
+        df = raw_df.iloc[header_idx + 1:].copy()
+        df.columns = headers
+        
+        # 4. Clean out empty columns and filter valid project rows
+        df = df.loc[:, ~df.columns.str.startswith("Unnamed")]
+        df = df.loc[:, df.columns != "nan"]
+        df = df.dropna(subset=["Project Name"]).copy()
+        df["Project Name"] = df["Project Name"].astype(str).str.strip()
+        
+        return df
 
-    # Read 'Ratings' tab
-    ratings_raw = conn.read(worksheet="Ratings", header=6)
-    df_ratings = ratings_raw.dropna(subset=["Project Name"]).copy()
+    # Load both tabs dynamically
+    df_projects = parse_worksheet("Projects")
+    df_ratings = parse_worksheet("Ratings")
 
-    # Merge Release Candidates from Ratings into Projects if needed
-    if "Number of Release Candidates" in df_ratings.columns:
+    # Format Dates safely
+    if "Start Date" in df_projects.columns:
+        df_projects["Start Date"] = pd.to_datetime(df_projects["Start Date"], errors="coerce")
+    if "Completion Date" in df_projects.columns:
+        df_projects["Completion Date"] = pd.to_datetime(df_projects["Completion Date"], errors="coerce")
+
+    # Merge Release Candidates count if stored in Ratings sheet
+    if "Number of Release Candidates" in df_ratings.columns and "Number of Release Candidates" not in df_projects.columns:
         rc_data = df_ratings[["Project Name", "Number of Release Candidates"]]
         df_projects = pd.merge(df_projects, rc_data, on="Project Name", how="left")
 
-    # Ensure duration columns exist (fill with default values if not yet in Sheet)
-    for col in ["Estimated QA Days", "Actual QA Days", "QA Estimate rc Dependant"]:
-        if col not in df_projects.columns:
-            df_projects[col] = 0.0
-        else:
+    # Ensure numeric columns are converted safely for the Plotly charts
+    duration_cols = ["Estimated QA Days", "Actual QA Days", "QA Estimate rc Dependant", "Number of Release Candidates"]
+    for col in duration_cols:
+        if col in df_projects.columns:
             df_projects[col] = pd.to_numeric(df_projects[col], errors="coerce").fillna(0.0)
-
-    if "Number of Release Candidates" not in df_projects.columns:
-        df_projects["Number of Release Candidates"] = 0
+        else:
+            df_projects[col] = 0.0
 
     return df_projects, df_ratings
 
