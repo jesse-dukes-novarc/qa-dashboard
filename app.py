@@ -264,12 +264,16 @@ with tab2:
     fig_combo.update_yaxes(
         title_text="Estimated QA Days | Actual QA Days | QA Estimate rc Dependant",
         secondary_y=False,
-        showgrid=True
+        showgrid=True,
+        rangemode="tozero",
     )
     fig_combo.update_yaxes(
         title_text="Release Candidates",
         secondary_y=True,
-        showgrid=False
+        showgrid=False,
+        rangemode="tozero",
+        tickformat="d",
+        dtick=1
     )
 
     st.plotly_chart(fig_combo, use_container_width=True)
