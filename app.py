@@ -284,11 +284,11 @@ with tab2:
     st.plotly_chart(fig_combo, use_container_width=True)
 
 # =============================================================================
-# TAB 3: BUGS REPORTED VS RESOLVED (HORIZONTAL GROUPED BARS)
+# TAB 3: BUGS REPORTED VS RESOLVED (OVERLAY LOADING BARS)
 # =============================================================================
 with tab3:
     st.title("🐞 Bugs Reported and Bugs Resolved by Bundle")
-    st.caption("Track total defects reported vs. total defects resolved across project releases")
+    st.caption("Progress view: Green resolved bar filling the red reported track")
 
     # High-level summary KPI cards
     tot_reported = int(df_projects["Bugs Reported"].sum())
@@ -302,27 +302,31 @@ with tab3:
 
     st.divider()
 
-    # Horizontal Grouped Bar Chart
     fig_bugs = go.Figure()
 
+    # 1. Background Track (Red-Orange): Total Bugs Reported
     fig_bugs.add_trace(go.Bar(
         y=df_projects["Project Name"],
         x=df_projects["Bugs Reported"],
         name="Bugs Reported",
         orientation='h',
-        marker_color="#ff5722"  # Red-Orange matching Looker Studio
+        marker_color="#ff5722",  # Outer track color
+        opacity=0.85,
+        width=0.5                # Thicker bar width for the track
     ))
 
+    # 2. Foreground Fill (Green): Bugs Resolved (Drawn second so it renders on top)
     fig_bugs.add_trace(go.Bar(
         y=df_projects["Project Name"],
         x=df_projects["Bugs Resolved"],
         name="Bugs Resolved",
         orientation='h',
-        marker_color="#4caf50"  # Green matching Looker Studio
+        marker_color="#4caf50",  # Fill bar color
+        width=0.3                # Thinner bar width to sit inside the track
     ))
 
     fig_bugs.update_layout(
-        barmode="group",
+        barmode="overlay",       # Overlays traces on top of each other
         legend=dict(
             orientation="h",
             yanchor="bottom",
@@ -334,7 +338,7 @@ with tab3:
         height=600,
         paper_bgcolor="rgba(0, 0, 0, 0)",
         plot_bgcolor="rgba(0, 0, 0, 0)",
-        yaxis=dict(autorange="reversed")  # Keeps top project at the top of the axis
+        yaxis=dict(autorange="reversed")  # Retains top-to-bottom project order
     )
 
     fig_bugs.update_xaxes(
