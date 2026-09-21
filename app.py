@@ -51,16 +51,21 @@ def load_data():
         rc_data = df_ratings[["Project Name", "Number of Release Candidates"]].drop_duplicates(subset=["Project Name"])
         df_projects = pd.merge(df_projects, rc_data, on="Project Name", how="left")
 
-    # Coerce numeric fields in Projects
-    proj_numeric = [
-        "Estimated QA Days", "Actual QA Days", "QA Estimate rc Dependant", 
-        "Number of Release Candidates", "Bugs Reported", "Bugs Resolved"
-    ]
-    for col in proj_numeric:
+    # Coerce numeric floating-point fields in Projects
+    float_cols = ["Estimated QA Days", "Actual QA Days", "QA Estimate rc Dependant"]
+    for col in float_cols:
         if col in df_projects.columns:
             df_projects[col] = pd.to_numeric(df_projects[col], errors="coerce").fillna(0.0)
         else:
             df_projects[col] = 0.0
+
+    # Coerce integer count fields in Projects (cast to whole numbers)
+    int_cols = ["Number of Release Candidates", "Bugs Reported", "Bugs Resolved", "Number of Welds Tested"]
+    for col in int_cols:
+        if col in df_projects.columns:
+            df_projects[col] = pd.to_numeric(df_projects[col], errors="coerce").fillna(0).astype(int)
+        else:
+            df_projects[col] = 0
 
     # Coerce numeric fields in Defects sheet
     defect_list = [
@@ -72,9 +77,9 @@ def load_data():
 
     for col in weld_cols:
         if col in df_defects.columns:
-            df_defects[col] = pd.to_numeric(df_defects[col], errors="coerce").fillna(0.0)
+            df_defects[col] = pd.to_numeric(df_defects[col], errors="coerce").fillna(0).astype(int)
         else:
-            df_defects[col] = 0.0
+            df_defects[col] = 0
 
     return df_projects, df_ratings, df_defects
 
@@ -148,12 +153,14 @@ with tab1:
         if col_name in df_display.columns:
             df_display[col_name] = df_display[col_name].apply(format_release_link)
 
-    # Configure columns and expand width to prevent text truncation
+    # Configure columns, setting format="%d" on count columns to force whole numbers
     column_configuration = {
         "Start Date": st.column_config.DateColumn("Start Date", format="YYYY-MM-DD"),
         "Completion Date": st.column_config.DateColumn("Completion Date", format="YYYY-MM-DD"),
         "Pre/Robustness": st.column_config.TextColumn("Pre/Robustness", width="large"),
         "Welding Inspection Required": st.column_config.TextColumn("Welding Req?", width="medium"),
+        "Number of Welds Tested": st.column_config.NumberColumn("Number of Welds Tested", format="%d"),
+        "Number of Release Candidates": st.column_config.NumberColumn("Number of Release Candidates", format="%d"),
         "QA Release Document": st.column_config.LinkColumn(
             "QA Release Document",
             display_text=r"#(.*)$",
@@ -223,7 +230,7 @@ with tab1:
             
             m5, m6 = st.columns(2)
             m5.metric("Software Support", f"{p_data.get('Software Support', 'N/A')} / 5")
-            m6.metric("Release Candidates", f"{p_data.get('Number of Release Candidates', 'N/A')}")
+            m6.metric("Release Candidates", f"{int(p_data.get('Number of Release Candidates', 0))}")
             
             st.metric("Targeted Test Plan", f"{p_data.get('Targeted Test Plan', 'N/A')}")
 
