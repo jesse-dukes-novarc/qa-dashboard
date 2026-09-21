@@ -17,7 +17,7 @@ def load_data():
     def fetch_sheet(worksheet_name):
         df = conn.read(worksheet=worksheet_name, header=6)
         
-        # Clean column names (strip hidden spaces / unicode non-breaking spaces)
+        # Clean column names
         df.columns = df.columns.astype(str).str.replace('\xa0', ' ').str.strip()
         
         # Drop empty/unnamed columns
@@ -34,7 +34,7 @@ def load_data():
     df_projects = fetch_sheet("Projects")
     df_ratings = fetch_sheet("Ratings")
     
-    # Try fetching Defects tab (falls back to empty DF if tab is not created yet)
+    # Try fetching Defects tab
     try:
         df_defects = fetch_sheet("Defects")
     except Exception:
@@ -103,7 +103,7 @@ tab1, tab2, tab3, tab4 = st.tabs([
 # TAB 1: SUMMARY & READ-ONLY RATINGS
 # =============================================================================
 with tab1:
-    st.title("📋 QA Active & Closed Projects Summary")
+    st.title("📋 Active & Closed Projects Summary")
 
     time_range = st.radio(
         "Select Time Range:",
@@ -128,14 +128,69 @@ with tab1:
 
     st.subheader("Project Inventory")
     
+    # Exclude Bug metrics and Duration metrics from Tab 1 inventory view
+    hide_columns = [
+        "Bugs Reported", "Bugs Resolved", 
+        "Estimated QA Days", "Actual QA Days", "QA Estimate rc Dependant"
+    ]
+    cols_to_exclude = [c for c in hide_columns if c in df_filtered.columns]
+    df_display = df_filtered.drop(columns=cols_to_exclude).copy()
+
+    # Pre-process URLs so regex extracts custom link text only when a valid URL is present
+    def format_release_link(val):
+        val_str = str(val).strip()
+        if val_str.startswith("http://") or val_str.startswith("https://"):
+            if "#" not in val_str:
+                return f"{val_str}#Open Release Form 🔗"
+        return val_str
+
+    for col_name in ["QA Release Document", "QA Release Form Link"]:
+        if col_name in df_display.columns:
+            df_display[col_name] = df_display[col_name].apply(format_release_link)
+
+    # Configure columns and expand width to prevent text truncation
+    column_configuration = {
+        "Start Date": st.column_config.DateColumn("Start Date", format="YYYY-MM-DD"),
+        "Completion Date": st.column_config.DateColumn("Completion Date", format="YYYY-MM-DD"),
+        "Pre/Robustness": st.column_config.TextColumn("Pre/Robustness", width="large"),
+        "Welding Inspection Required": st.column_config.TextColumn("Welding Req?", width="medium"),
+        "QA Release Document": st.column_config.LinkColumn(
+            "QA Release Document",
+            display_text=r"#(.*)$",
+            width="medium"
+        ),
+    }
+
+    if "QA Release Form Link" in df_display.columns:
+        column_configuration["QA Release Form Link"] = st.column_config.LinkColumn(
+            "QA Release Form Link",
+            display_text=r"#(.*)$",
+            width="medium"
+        )
+
+    # Highlight rules for Completed (Green) and Welding Inspection Required = Yes (Orange)
+    def highlight_status(val):
+        if str(val).strip().lower() == "completed":
+            return "background-color: #2e7d32; color: #ffffff; font-weight: bold;"
+        return ""
+
+    def highlight_welding(val):
+        if str(val).strip().lower() == "yes":
+            return "background-color: #e65100; color: #ffffff; font-weight: bold;"
+        return ""
+
+    styler = df_display.style
+    map_func = getattr(styler, "map", None) or getattr(styler, "applymap", None)
+
+    if map_func:
+        if "Status" in df_display.columns:
+            styler = map_func(highlight_status, subset=["Status"])
+        if "Welding Inspection Required" in df_display.columns:
+            styler = map_func(highlight_welding, subset=["Welding Inspection Required"])
+
     st.dataframe(
-        df_filtered,
-        column_config={
-            "Start Date": st.column_config.DateColumn("Start Date", format="YYYY-MM-DD"),
-            "Completion Date": st.column_config.DateColumn("Completion Date", format="YYYY-MM-DD"),
-            "Welding Inspection Required": st.column_config.TextColumn("Welding Req?"),
-            "QA Release Document": st.column_config.TextColumn("Release Status"),
-        },
+        styler,
+        column_config=column_configuration,
         use_container_width=True,
         hide_index=True
     )
@@ -148,6 +203,7 @@ with tab1:
     selected_project = st.selectbox("Select Project to Inspect Ratings:", project_list)
     
     project_rating_row = df_ratings[df_ratings["Project Name"] == selected_project]
+    project_main_row = df_projects[df_projects["Project Name"] == selected_project]
 
     col_metrics, col_chart = st.columns([1, 1])
 
@@ -170,6 +226,20 @@ with tab1:
             m6.metric("Release Candidates", f"{p_data.get('Number of Release Candidates', 'N/A')}")
             
             st.metric("Targeted Test Plan", f"{p_data.get('Targeted Test Plan', 'N/A')}")
+
+            # Render action button if a valid URL exists
+            release_url = None
+            if not project_main_row.empty:
+                for link_col in ["QA Release Document", "QA Release Form Link"]:
+                    if link_col in project_main_row.columns:
+                        val = str(project_main_row.iloc[0][link_col]).strip()
+                        if val.startswith("http://") or val.startswith("https://"):
+                            release_url = val
+                            break
+
+            if release_url:
+                st.link_button("📄 Open QA Release Form", release_url, use_container_width=True)
+
         else:
             st.warning("No rating record found in the Ratings sheet for this project.")
 
@@ -324,6 +394,7 @@ with tab3:
 
     fig_bugs = go.Figure()
 
+    # Maintains 0.5 bar width for both traces
     fig_bugs.add_trace(go.Bar(
         y=df_projects["Project Name"],
         x=df_projects["Bugs Reported"],
@@ -383,7 +454,6 @@ with tab4:
 
         df_w = df_defects.copy()
 
-        # Calculate percentages
         df_w["Total Welds"] = df_w["Welds Passed"] + df_w["Welds Failed"]
         
         def calc_pass(row):
@@ -395,26 +465,23 @@ with tab4:
         df_w["Pass %"] = df_w.apply(calc_pass, axis=1)
         df_w["Fail %"] = df_w.apply(calc_fail, axis=1)
 
-        # Filter projects that have actual weld data
         df_w_active = df_w[df_w["Total Welds"] > 0]
 
         if not df_w_active.empty:
             fig_100_stack = go.Figure()
 
-            # 1. Red Fail % at the bottom
             fig_100_stack.add_trace(go.Bar(
                 x=df_w_active["Project Name"],
                 y=df_w_active["Fail %"],
                 name="Fail %",
-                marker_color="#d32f2f"  # Red
+                marker_color="#d32f2f"
             ))
 
-            # 2. Green Pass % stacked on top
             fig_100_stack.add_trace(go.Bar(
                 x=df_w_active["Project Name"],
                 y=df_w_active["Pass %"],
                 name="Pass %",
-                marker_color="#388e3c"  # Green
+                marker_color="#388e3c"
             ))
 
             fig_100_stack.update_layout(
@@ -453,7 +520,6 @@ with tab4:
             "Burn Through", "Bead Position", "Inclusion", "Excessive Reinforcement"
         ]
 
-        # Filter valid defect columns present in df_defects
         valid_defects = [c for c in defect_list if c in df_defects.columns]
 
         if valid_defects:
@@ -463,7 +529,6 @@ with tab4:
                 "Count": defect_totals.values
             })
 
-            # Filter out defects with 0 count
             df_defects_active = df_defects_summary[df_defects_summary["Count"] > 0]
 
             if not df_defects_active.empty:
