@@ -171,12 +171,12 @@ with tab1:
                visible=True,
                range=[0, 5],
                # 1. Scale numbers color (0, 1, 2, 3, 4, 5)
-               tickfont=dict(color="white", size=12),
+               tickfont=dict(color="black", size=12),
                gridcolor="#444444"  # Optional: grid line color
             ),
             angularaxis=dict(
                 # 2. Outer category labels color (Documents Provided, etc.)
-                tickfont=dict(color="white", size=12)
+                tickfont=dict(color="black", size=12)
             )
       ),
       paper_bgcolor="rgba(0, 0, 0, 0)",
