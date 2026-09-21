@@ -7,87 +7,71 @@ from streamlit_gsheets import GSheetsConnection
 
 st.set_page_config(page_title="QA Project Dashboard", layout="wide", page_icon="📊")
 
+# -----------------------------------------------------------------------------
+# 1. DYNAMIC DATA LOADER (READ-ONLY)
+# -----------------------------------------------------------------------------
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# TTL set to 0 during development to prevent cached KeyError states
-@st.cache_data(ttl=0)
+@st.cache_data(ttl=60)
 def load_data():
     def parse_worksheet(worksheet_name):
         try:
-            # 1. Read sheet without assuming header position
             raw_df = conn.read(worksheet=worksheet_name, header=None)
         except Exception as err:
-            st.error(f"❌ Failed to reach worksheet '{worksheet_name}'. Verify tab name in Google Sheets. Error: {err}")
+            st.error(f"❌ Failed to reach worksheet '{worksheet_name}'. Error: {err}")
             st.stop()
-            
+
         if raw_df is None or raw_df.empty:
             st.error(f"❌ Worksheet '{worksheet_name}' is empty.")
             st.stop()
 
-        # 2. Locate row index containing 'Project Name' (case-insensitive & handles non-breaking spaces)
+        # Locate row containing 'Project Name'
         header_idx = None
         for idx, row in raw_df.iterrows():
-            clean_row = (
-                row.astype(str)
-                .str.replace('\xa0', ' ', regex=False)
-                .str.strip()
-                .str.lower()
-            )
-            if any("project name" in val for val in clean_row):
+            clean_cells = [str(val).replace('\xa0', ' ').strip().lower() for val in row.values]
+            if any("project name" in cell for cell in clean_cells):
                 header_idx = idx
                 break
 
         if header_idx is None:
-            st.error(f"❌ Could not find a row containing 'Project Name' in tab: **'{worksheet_name}'**.")
-            st.write("First 10 rows retrieved from Google Sheets for inspection:")
-            st.dataframe(raw_df.head(10))
+            st.error(f"❌ Could not find 'Project Name' row in '{worksheet_name}'.")
             st.stop()
 
-        # 3. Promote detected row to column headers
-        headers = (
-            raw_df.iloc[header_idx]
-            .astype(str)
-            .str.replace('\xa0', ' ', regex=False)
-            .str.strip()
-        )
+        # Promote row to headers & clean column names
+        headers = [str(val).replace('\xa0', ' ').strip() for val in raw_df.iloc[header_idx].values]
         df = raw_df.iloc[header_idx + 1:].copy()
         df.columns = headers
 
-        # 4. Clean out NaN and Unnamed junk columns
-        df = df.loc[:, df.columns.notna()]
-        df = df.loc[:, ~df.columns.str.lower().startswith("unnamed")]
-        df = df.loc[:, ~df.columns.str.lower().startswith("nan")]
+        # Remove unnamed or NaN columns
+        valid_cols = [c for c in df.columns if c and not str(c).lower().startswith("unnamed") and str(c).lower() != "nan"]
+        df = df.loc[:, valid_cols]
 
-        # 5. Locate and standardize 'Project Name' column key
-        matching_cols = [c for c in df.columns if c.lower() == "project name"]
-        if not matching_cols:
-            st.error(f"❌ Header mismatch in '{worksheet_name}'. Detected columns: `{df.columns.tolist()}`")
-            st.stop()
-            
-        df = df.rename(columns={matching_cols[0]: "Project Name"})
+        # Standardize Project Name column header
+        matching_cols = [c for c in df.columns if str(c).strip().lower() == "project name"]
+        if matching_cols:
+            df = df.rename(columns={matching_cols[0]: "Project Name"})
 
-        # 6. Filter out blank rows
+        # Filter empty project rows
         df["Project Name"] = df["Project Name"].astype(str).str.strip()
-        df = df[df["Project Name"].str.lower().isin(["nan", "none", ""]) == False]
+        df = df[~df["Project Name"].str.lower().isin(["nan", "none", "", "null"])]
 
         return df
 
-    # Parse both tabs
     df_projects = parse_worksheet("Projects")
     df_ratings = parse_worksheet("Ratings")
 
-    # Dates
+    # Format Dates safely
     if "Start Date" in df_projects.columns:
         df_projects["Start Date"] = pd.to_datetime(df_projects["Start Date"], errors="coerce")
     if "Completion Date" in df_projects.columns:
         df_projects["Completion Date"] = pd.to_datetime(df_projects["Completion Date"], errors="coerce")
 
-    # Merge Release Candidates from Ratings if present
+    # Merge Release Candidates count if in Ratings
     if "Number of Release Candidates" in df_ratings.columns and "Number of Release Candidates" not in df_projects.columns:
         rc_data = df_ratings[["Project Name", "Number of Release Candidates"]]
         df_projects = pd.merge(df_projects, rc_data, on="Project Name", how="left")
 
-    # Numeric Columns for Plotly Charts
+    # Coerce numeric fields and clean formula errors (#VALUE!)
     duration_cols = ["Estimated QA Days", "Actual QA Days", "QA Estimate rc Dependant", "Number of Release Candidates"]
     for col in duration_cols:
         if col in df_projects.columns:
@@ -97,22 +81,24 @@ def load_data():
 
     return df_projects, df_ratings
 
-# Load data without wrapping try/except so clear errors display directly on page
-df_projects, df_ratings = load_data()
-
 try:
     df_projects, df_ratings = load_data()
 except Exception as e:
-    st.error(f"Error loading Google Sheets data: {e}")
+    st.error(f"Error loading dashboard data: {e}")
     st.stop()
 
 # -----------------------------------------------------------------------------
-# 2. TABBED NAVIGATION
+# 2. TAB NAVIGATION & REFRESH CONTROL
 # -----------------------------------------------------------------------------
+st.sidebar.title("QA Dashboard")
+if st.sidebar.button("🔄 Refresh Data from Sheet"):
+    st.cache_data.clear()
+    st.rerun()
+
 tab1, tab2 = st.tabs(["📋 Summary & QA Ratings", "📈 Testing Estimation vs Actuals"])
 
 # =============================================================================
-# TAB 1: SUMMARY & RATINGS
+# TAB 1: SUMMARY & READ-ONLY RATINGS
 # =============================================================================
 with tab1:
     st.title("📋 QA Active & Closed Projects Summary")
@@ -139,11 +125,15 @@ with tab1:
         df_filtered = df_projects.copy()
 
     st.subheader("Project Inventory")
+    
+    # Columns to render in the summary grid
+    summary_cols = [c for c in [
+        "Project Name", "Status", "Start Date", "Completion Date", 
+        "Pre/Robustness", "Welding Inspection Required", "Number of Welds Tested", "QA Release Document"
+    ] if c in df_filtered.columns]
+
     st.dataframe(
-        df_filtered[[
-            "Project Name", "Status", "Start Date", "Completion Date", 
-            "Pre/Robustness", "Welding Inspection Required", "Number of Welds Tested", "QA Release Document"
-        ]],
+        df_filtered[summary_cols],
         column_config={
             "Start Date": st.column_config.DateColumn("Start Date", format="YYYY-MM-DD"),
             "Completion Date": st.column_config.DateColumn("Completion Date", format="YYYY-MM-DD"),
@@ -156,72 +146,59 @@ with tab1:
 
     st.divider()
 
-    # QA Rating Section
-    st.subheader("⭐ QA Rating - Project Success Breakdown")
-    col_form, col_chart = st.columns([1, 1])
+    # Read-Only QA Rating Inspection
+    st.subheader("⭐ QA Rating - Readiness Breakdown")
+    
+    project_list = df_projects["Project Name"].tolist()
+    selected_project = st.selectbox("Select Project to Inspect Ratings:", project_list)
+    
+    project_rating_row = df_ratings[df_ratings["Project Name"] == selected_project]
 
-    with col_form:
-        selected_project = st.selectbox("Select Project:", df_projects["Project Name"].tolist())
-        project_row = df_ratings[df_ratings["Project Name"] == selected_project]
+    col_metrics, col_chart = st.columns([1, 1])
+
+    with col_metrics:
+        st.markdown(f"#### Recorded Scores for **{selected_project}**")
         
-        def get_val(col_name, default=3):
-            if not project_row.empty and col_name in project_row.columns:
-                val = project_row[col_name].values[0]
-                if pd.notna(val):
-                    try: return int(val)
-                    except ValueError: return default
-            return default
-
-        with st.form("rating_form"):
-            docs_score = st.slider("Documents Provided", 1, 5, get_val("Documents Provided"))
-            robot_score = st.slider("Robot Availability", 1, 5, get_val("Robot Availability"))
-            bundle_score = st.slider("Bundle Preparation", 1, 5, get_val("Bundle Preparation"))
-            software_score = st.slider("Software Support", 1, 5, get_val("Software Support"))
-            rc_count = st.number_input("Number of Release Candidates", min_value=0, max_value=20, value=get_val("Number of Release Candidates", 1))
+        if not project_rating_row.empty:
+            p_data = project_rating_row.iloc[0]
             
-            test_plan_options = ["Approved", "In Review", "Draft"]
-            current_plan_val = project_row["Targeted Test Plan"].values[0] if not project_row.empty and "Targeted Test Plan" in project_row.columns and pd.notna(project_row["Targeted Test Plan"].values[0]) else "Draft"
-            plan_index = test_plan_options.index(current_plan_val) if current_plan_val in test_plan_options else 2
-            test_plan_status = st.selectbox("Targeted Test Plan", test_plan_options, index=plan_index)
-
-            if st.form_submit_button("Sync Rating to Google Sheets"):
-                if selected_project in df_ratings["Project Name"].values:
-                    idx = df_ratings[df_ratings["Project Name"] == selected_project].index[0]
-                    df_ratings.loc[idx, "Documents Provided"] = docs_score
-                    df_ratings.loc[idx, "Robot Availability"] = robot_score
-                    df_ratings.loc[idx, "Bundle Preparation"] = bundle_score
-                    df_ratings.loc[idx, "Software Support"] = software_score
-                    df_ratings.loc[idx, "Number of Release Candidates"] = rc_count
-                    df_ratings.loc[idx, "Targeted Test Plan"] = test_plan_status
-                else:
-                    new_row = pd.DataFrame([{
-                        "Project Name": selected_project,
-                        "Documents Provided": docs_score,
-                        "Robot Availability": robot_score,
-                        "Bundle Preparation": bundle_score,
-                        "Software Support": software_score,
-                        "Number of Release Candidates": rc_count,
-                        "Targeted Test Plan": test_plan_status
-                    }])
-                    df_ratings = pd.concat([df_ratings, new_row], ignore_index=True)
-
-                conn.update(worksheet="Ratings", data=df_ratings)
-                st.cache_data.clear()
-                st.success(f"Updated Google Sheet for {selected_project}!")
-                st.rerun()
+            m1, m2 = st.columns(2)
+            m1.metric("Documents Provided", f"{p_data.get('Documents Provided', 'N/A')} / 5")
+            m2.metric("Robot Availability", f"{p_data.get('Robot Availability', 'N/A')} / 5")
+            
+            m3, m4 = st.columns(2)
+            m3.metric("Bundle Preparation", f"{p_data.get('Bundle Preparation', 'N/A')} / 5")
+            m4.metric("Software Support", f"{p_data.get('Software Support', 'N/A')} / 5")
+            
+            m5, m6 = st.columns(2)
+            m5.metric("Release Candidates", f"{p_data.get('Number of Release Candidates', 'N/A')}")
+            m6.metric("Targeted Test Plan", f"{p_data.get('Targeted Test Plan', 'N/A')}")
+        else:
+            st.warning("No rating record found in the Ratings sheet for this project.")
 
     with col_chart:
-        st.markdown(f"#### Performance Radar: **{selected_project}**")
-        if not project_row.empty:
+        st.markdown(f"#### Performance Radar")
+        if not project_rating_row.empty:
             categories = ["Documents Provided", "Robot Availability", "Bundle Preparation", "Software Support"]
-            scores = [get_val(cat) for cat in categories]
+            
+            scores = []
+            for cat in categories:
+                val = project_rating_row.iloc[0].get(cat, 0)
+                try: scores.append(float(val))
+                except (ValueError, TypeError): scores.append(0.0)
+
             fig_radar = go.Figure(go.Scatterpolar(
                 r=scores + [scores[0]],
                 theta=categories + [categories[0]],
                 fill='toself',
+                name=selected_project,
                 line_color='#0068c9'
             ))
-            fig_radar.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 5])), showlegend=False)
+            fig_radar.update_layout(
+                polar=dict(radialaxis=dict(visible=True, range=[0, 5])),
+                showlegend=False,
+                margin=dict(l=40, r=40, t=20, b=20)
+            )
             st.plotly_chart(fig_radar, use_container_width=True)
 
 # =============================================================================
@@ -231,16 +208,14 @@ with tab2:
     st.title("📈 Testing Estimation versus Actual Duration")
     st.caption("Includes Release Candidate (RC) iterations tracking")
 
-    # Create figure with dual Y-axes
     fig_combo = make_subplots(specs=[[{"secondary_y": True}]])
 
-    # Left Y-Axis: Grouped Bars
     fig_combo.add_trace(
         go.Bar(
             x=df_projects["Project Name"],
             y=df_projects["Estimated QA Days"],
             name="Estimated QA Days",
-            marker_color="#29b6f6"  # Bright Blue
+            marker_color="#29b6f6"
         ),
         secondary_y=False,
     )
@@ -250,7 +225,7 @@ with tab2:
             x=df_projects["Project Name"],
             y=df_projects["Actual QA Days"],
             name="Actual QA Days",
-            marker_color="#ab47bc"  # Purple
+            marker_color="#ab47bc"
         ),
         secondary_y=False,
     )
@@ -260,25 +235,23 @@ with tab2:
             x=df_projects["Project Name"],
             y=df_projects["QA Estimate rc Dependant"],
             name="QA Estimate rc Dependant",
-            marker_color="#9ccc65"  # Olive/Green
+            marker_color="#9ccc65"
         ),
         secondary_y=False,
     )
 
-    # Right Y-Axis: Line Overlay for Release Candidates
     fig_combo.add_trace(
         go.Scatter(
             x=df_projects["Project Name"],
             y=df_projects["Number of Release Candidates"],
             name="Release Candidates",
             mode="lines+markers",
-            line=dict(color="#ff5722", width=2.5),  # Orange Line
+            line=dict(color="#ff5722", width=2.5),
             marker=dict(size=6)
         ),
         secondary_y=True,
     )
 
-    # Styling Layout
     fig_combo.update_layout(
         barmode="group",
         legend=dict(
@@ -292,7 +265,6 @@ with tab2:
         height=550
     )
 
-    # Axis Labels
     fig_combo.update_yaxes(
         title_text="Estimated QA Days | Actual QA Days | QA Estimate rc Dependant",
         secondary_y=False,
