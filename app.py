@@ -46,8 +46,11 @@ def load_data():
         df_projects = pd.merge(df_projects, rc_data, on="Project Name", how="left")
 
     # Coerce numeric fields and resolve #VALUE! formula errors to 0.0
-    duration_cols = ["Estimated QA Days", "Actual QA Days", "QA Estimate rc Dependant", "Number of Release Candidates"]
-    for col in duration_cols:
+    numeric_cols = [
+        "Estimated QA Days", "Actual QA Days", "QA Estimate rc Dependant", 
+        "Number of Release Candidates", "Bugs Reported", "Bugs Resolved"
+    ]
+    for col in numeric_cols:
         if col in df_projects.columns:
             df_projects[col] = pd.to_numeric(df_projects[col], errors="coerce").fillna(0.0)
         else:
@@ -69,7 +72,11 @@ if st.sidebar.button("🔄 Refresh Data from Sheet"):
     st.cache_data.clear()
     st.rerun()
 
-tab1, tab2 = st.tabs(["📋 Summary & QA Ratings", "📈 Testing Estimation vs Actuals"])
+tab1, tab2, tab3 = st.tabs([
+    "📋 Summary & QA Ratings", 
+    "📈 Testing Estimation vs Actuals", 
+    "🐞 Bug Tracking"
+])
 
 # =============================================================================
 # TAB 1: SUMMARY & READ-ONLY RATINGS
@@ -148,7 +155,6 @@ with tab1:
     with col_chart:
         st.markdown("#### Performance Radar")
         if not project_rating_row.empty:
-            # 5 category factors for the radar chart
             categories = [
                 "Software Documentation Provided", 
                 "Product Documentation Provided", 
@@ -175,22 +181,22 @@ with tab1:
 
             fig_radar.update_layout(
                 polar=dict(
-                    bgcolor="white",  # White circle background
+                    bgcolor="white",
                     radialaxis=dict(
                         visible=True,
                         range=[0, 5],
-                        tickfont=dict(color="black", size=11),  # Black scale numbers (0-5)
+                        tickfont=dict(color="black", size=11),
                         gridcolor="#d3d3d3"
                     ),
                     angularaxis=dict(
-                        tickfont=dict(color="white", size=11),  # White text for outer labels
+                        tickfont=dict(color="white", size=11),
                         gridcolor="#444444"
                     )
                 ),
                 paper_bgcolor="rgba(0, 0, 0, 0)",
                 plot_bgcolor="rgba(0, 0, 0, 0)",
                 showlegend=False,
-                margin=dict(l=60, r=60, t=30, b=30)  # Slight margin boost for longer category names
+                margin=dict(l=60, r=60, t=30, b=30)
             )
 
             st.plotly_chart(fig_radar, use_container_width=True)
@@ -202,7 +208,7 @@ with tab1:
 # =============================================================================
 with tab2:
     st.title("📈 Testing Estimation versus Actual Duration")
-    st.caption("The Blue bars represent the Estimated QA Days, the Purple bars represent the Actual QA Days, and the Green bars represent the Original Estimate multiplied by the number of Release Candidates as testing is repeated for each rc. The Orange line represents the Number of Release Candidates.")
+    st.caption("Includes Release Candidate (RC) iterations tracking")
 
     fig_combo = make_subplots(specs=[[{"secondary_y": True}]])
 
@@ -265,15 +271,77 @@ with tab2:
         title_text="Estimated QA Days | Actual QA Days | QA Estimate rc Dependant",
         secondary_y=False,
         showgrid=True,
-        rangemode="tozero",
+        rangemode="tozero"
     )
     fig_combo.update_yaxes(
         title_text="Release Candidates",
         secondary_y=True,
         showgrid=False,
         rangemode="tozero",
+        tickformat="d"
+    )
+
+    st.plotly_chart(fig_combo, use_container_width=True)
+
+# =============================================================================
+# TAB 3: BUGS REPORTED VS RESOLVED (HORIZONTAL GROUPED BARS)
+# =============================================================================
+with tab3:
+    st.title("🐞 Bugs Reported and Bugs Resolved by Bundle")
+    st.caption("Track total defects reported vs. total defects resolved across project releases")
+
+    # High-level summary KPI cards
+    tot_reported = int(df_projects["Bugs Reported"].sum())
+    tot_resolved = int(df_projects["Bugs Resolved"].sum())
+    res_rate = (tot_resolved / tot_reported * 100) if tot_reported > 0 else 0.0
+
+    kpi1, kpi2, kpi3 = st.columns(3)
+    kpi1.metric("Total Bugs Reported", f"{tot_reported}")
+    kpi2.metric("Total Bugs Resolved", f"{tot_resolved}")
+    kpi3.metric("Resolution Rate", f"{res_rate:.1f}%")
+
+    st.divider()
+
+    # Horizontal Grouped Bar Chart
+    fig_bugs = go.Figure()
+
+    fig_bugs.add_trace(go.Bar(
+        y=df_projects["Project Name"],
+        x=df_projects["Bugs Reported"],
+        name="Bugs Reported",
+        orientation='h',
+        marker_color="#ff5722"  # Red-Orange matching Looker Studio
+    ))
+
+    fig_bugs.add_trace(go.Bar(
+        y=df_projects["Project Name"],
+        x=df_projects["Bugs Resolved"],
+        name="Bugs Resolved",
+        orientation='h',
+        marker_color="#4caf50"  # Green matching Looker Studio
+    ))
+
+    fig_bugs.update_layout(
+        barmode="group",
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="left",
+            x=0
+        ),
+        margin=dict(l=20, r=20, t=50, b=20),
+        height=600,
+        paper_bgcolor="rgba(0, 0, 0, 0)",
+        plot_bgcolor="rgba(0, 0, 0, 0)",
+        yaxis=dict(autorange="reversed")  # Keeps top project at the top of the axis
+    )
+
+    fig_bugs.update_xaxes(
+        showgrid=True,
+        rangemode="tozero",
         tickformat="d",
         dtick=1
     )
 
-    st.plotly_chart(fig_combo, use_container_width=True)
+    st.plotly_chart(fig_bugs, use_container_width=True)
