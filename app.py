@@ -15,10 +15,9 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 @st.cache_data(ttl=60)
 def load_data():
     def fetch_sheet(worksheet_name):
-        # Read worksheet specifying row 7 (index 6) as the fixed header row
         df = conn.read(worksheet=worksheet_name, header=6)
         
-        # Clean column names (strip hidden spaces / unicode non-breaking spaces)
+        # Clean column names
         df.columns = df.columns.astype(str).str.replace('\xa0', ' ').str.strip()
         
         # Drop empty/unnamed columns
@@ -131,23 +130,32 @@ with tab1:
             p_data = project_rating_row.iloc[0]
             
             m1, m2 = st.columns(2)
-            m1.metric("Documents Provided", f"{p_data.get('Documents Provided', 'N/A')} / 5")
-            m2.metric("Robot Availability", f"{p_data.get('Robot Availability', 'N/A')} / 5")
+            m1.metric("Software Docs Provided", f"{p_data.get('Software Documentation Provided', 'N/A')} / 5")
+            m2.metric("Product Docs Provided", f"{p_data.get('Product Documentation Provided', 'N/A')} / 5")
             
             m3, m4 = st.columns(2)
-            m3.metric("Bundle Preparation", f"{p_data.get('Bundle Preparation', 'N/A')} / 5")
-            m4.metric("Software Support", f"{p_data.get('Software Support', 'N/A')} / 5")
+            m3.metric("Robot Availability", f"{p_data.get('Robot Availability', 'N/A')} / 5")
+            m4.metric("Bundle Preparation", f"{p_data.get('Bundle Preparation', 'N/A')} / 5")
             
             m5, m6 = st.columns(2)
-            m5.metric("Release Candidates", f"{p_data.get('Number of Release Candidates', 'N/A')}")
-            m6.metric("Targeted Test Plan", f"{p_data.get('Targeted Test Plan', 'N/A')}")
+            m5.metric("Software Support", f"{p_data.get('Software Support', 'N/A')} / 5")
+            m6.metric("Release Candidates", f"{p_data.get('Number of Release Candidates', 'N/A')}")
+            
+            st.metric("Targeted Test Plan", f"{p_data.get('Targeted Test Plan', 'N/A')}")
         else:
             st.warning("No rating record found in the Ratings sheet for this project.")
 
     with col_chart:
         st.markdown("#### Performance Radar")
         if not project_rating_row.empty:
-            categories = ["Documents Provided", "Robot Availability", "Bundle Preparation", "Software Support"]
+            # 5 category factors for the radar chart
+            categories = [
+                "Software Documentation Provided", 
+                "Product Documentation Provided", 
+                "Robot Availability", 
+                "Bundle Preparation", 
+                "Software Support"
+            ]
             
             scores = []
             for cat in categories:
@@ -167,22 +175,22 @@ with tab1:
 
             fig_radar.update_layout(
                 polar=dict(
-                    bgcolor="white",  # White background inside the polar circle
+                    bgcolor="white",  # White circle background
                     radialaxis=dict(
                         visible=True,
                         range=[0, 5],
-                        tickfont=dict(color="black", size=11),  # Black scale numbers (0-5) on white
-                        gridcolor="#d3d3d3"  # Subtle gray radial grid lines
+                        tickfont=dict(color="black", size=11),  # Black scale numbers (0-5)
+                        gridcolor="#d3d3d3"
                     ),
                     angularaxis=dict(
-                        tickfont=dict(color="white", size=12),  # White text for outer category labels
+                        tickfont=dict(color="white", size=11),  # White text for outer labels
                         gridcolor="#444444"
                     )
                 ),
                 paper_bgcolor="rgba(0, 0, 0, 0)",
                 plot_bgcolor="rgba(0, 0, 0, 0)",
                 showlegend=False,
-                margin=dict(l=40, r=40, t=20, b=20)
+                margin=dict(l=60, r=60, t=30, b=30)  # Slight margin boost for longer category names
             )
 
             st.plotly_chart(fig_radar, use_container_width=True)
