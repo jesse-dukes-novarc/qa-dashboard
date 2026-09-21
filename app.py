@@ -8,7 +8,7 @@ from streamlit_gsheets import GSheetsConnection
 st.set_page_config(page_title="QA Project Dashboard", layout="wide", page_icon="📊")
 
 # -----------------------------------------------------------------------------
-# 1. READ-ONLY DATA LOADER (FIXED ROW 7 HEADERS)
+# 1. READ-ONLY DATA LOADER (FETCHES PROJECTS, RATINGS & DEFECTS TABS)
 # -----------------------------------------------------------------------------
 conn = st.connection("gsheets", type=GSheetsConnection)
 
@@ -17,7 +17,7 @@ def load_data():
     def fetch_sheet(worksheet_name):
         df = conn.read(worksheet=worksheet_name, header=6)
         
-        # Clean column names
+        # Clean column names (strip hidden spaces / unicode non-breaking spaces)
         df.columns = df.columns.astype(str).str.replace('\xa0', ' ').str.strip()
         
         # Drop empty/unnamed columns
@@ -33,6 +33,12 @@ def load_data():
 
     df_projects = fetch_sheet("Projects")
     df_ratings = fetch_sheet("Ratings")
+    
+    # Try fetching Defects tab (falls back to empty DF if tab is not created yet)
+    try:
+        df_defects = fetch_sheet("Defects")
+    except Exception:
+        df_defects = pd.DataFrame(columns=["Project Name"])
 
     # Format Dates safely
     if "Start Date" in df_projects.columns:
@@ -45,21 +51,35 @@ def load_data():
         rc_data = df_ratings[["Project Name", "Number of Release Candidates"]].drop_duplicates(subset=["Project Name"])
         df_projects = pd.merge(df_projects, rc_data, on="Project Name", how="left")
 
-    # Coerce numeric fields and resolve #VALUE! formula errors to 0.0
-    numeric_cols = [
+    # Coerce numeric fields in Projects
+    proj_numeric = [
         "Estimated QA Days", "Actual QA Days", "QA Estimate rc Dependant", 
         "Number of Release Candidates", "Bugs Reported", "Bugs Resolved"
     ]
-    for col in numeric_cols:
+    for col in proj_numeric:
         if col in df_projects.columns:
             df_projects[col] = pd.to_numeric(df_projects[col], errors="coerce").fillna(0.0)
         else:
             df_projects[col] = 0.0
 
-    return df_projects, df_ratings
+    # Coerce numeric fields in Defects sheet
+    defect_list = [
+        "Leg Size (under/over)", "Undercut", "Lack of Penetration", 
+        "Lack of Fusion", "Underfill", "Cracking", "Porosity", 
+        "Burn Through", "Bead Position", "Inclusion", "Excessive Reinforcement"
+    ]
+    weld_cols = ["Welds Passed", "Welds Failed"] + defect_list
+
+    for col in weld_cols:
+        if col in df_defects.columns:
+            df_defects[col] = pd.to_numeric(df_defects[col], errors="coerce").fillna(0.0)
+        else:
+            df_defects[col] = 0.0
+
+    return df_projects, df_ratings, df_defects
 
 try:
-    df_projects, df_ratings = load_data()
+    df_projects, df_ratings, df_defects = load_data()
 except Exception as e:
     st.error(f"Error loading dashboard data: {e}")
     st.stop()
@@ -72,10 +92,11 @@ if st.sidebar.button("🔄 Refresh Data from Sheet"):
     st.cache_data.clear()
     st.rerun()
 
-tab1, tab2, tab3 = st.tabs([
+tab1, tab2, tab3, tab4 = st.tabs([
     "📋 Summary & QA Ratings", 
     "📈 Testing Estimation vs Actuals", 
-    "🐞 Bug Tracking"
+    "🐞 Bug Tracking",
+    "🔬 Welding & Defect Metrics"
 ])
 
 # =============================================================================
@@ -290,7 +311,6 @@ with tab3:
     st.title("🐞 Bugs Reported and Bugs Resolved by Bundle")
     st.caption("Progress view: Green resolved bar filling the red reported track")
 
-    # High-level summary KPI cards
     tot_reported = int(df_projects["Bugs Reported"].sum())
     tot_resolved = int(df_projects["Bugs Resolved"].sum())
     res_rate = (tot_resolved / tot_reported * 100) if tot_reported > 0 else 0.0
@@ -304,29 +324,27 @@ with tab3:
 
     fig_bugs = go.Figure()
 
-    # 1. Background Track (Red-Orange): Total Bugs Reported
     fig_bugs.add_trace(go.Bar(
         y=df_projects["Project Name"],
         x=df_projects["Bugs Reported"],
         name="Bugs Reported",
         orientation='h',
-        marker_color="#ff5722",  # Outer track color
+        marker_color="#ff5722",
         opacity=0.85,
-        width=0.5                # Thicker bar width for the track
+        width=0.5
     ))
 
-    # 2. Foreground Fill (Green): Bugs Resolved (Drawn second so it renders on top)
     fig_bugs.add_trace(go.Bar(
         y=df_projects["Project Name"],
         x=df_projects["Bugs Resolved"],
         name="Bugs Resolved",
         orientation='h',
-        marker_color="#4caf50",  # Fill bar color
-        width=0.3                # Thinner bar width to sit inside the track
+        marker_color="#4caf50",
+        width=0.3
     ))
 
     fig_bugs.update_layout(
-        barmode="overlay",       # Overlays traces on top of each other
+        barmode="overlay",
         legend=dict(
             orientation="h",
             yanchor="bottom",
@@ -338,7 +356,7 @@ with tab3:
         height=600,
         paper_bgcolor="rgba(0, 0, 0, 0)",
         plot_bgcolor="rgba(0, 0, 0, 0)",
-        yaxis=dict(autorange="reversed")  # Retains top-to-bottom project order
+        yaxis=dict(autorange="reversed")
     )
 
     fig_bugs.update_xaxes(
@@ -349,3 +367,128 @@ with tab3:
     )
 
     st.plotly_chart(fig_bugs, use_container_width=True)
+
+# =============================================================================
+# TAB 4: WELDING PASS/FAIL PERCENTAGES & DEFECT BREAKDOWN (FROM DEFECTS TAB)
+# =============================================================================
+with tab4:
+    st.title("🔬 Welding Inspection & Defect Metrics")
+    st.caption("Joint pass/failure percentages and defect cause distribution")
+
+    col_weld_chart, col_defect_chart = st.columns([1, 1])
+
+    # --- LEFT CHART: 100% STACKED PASS/FAIL PERCENTAGES ---
+    with col_weld_chart:
+        st.subheader("Joint Pass/Failure Percentages")
+
+        df_w = df_defects.copy()
+
+        # Calculate percentages
+        df_w["Total Welds"] = df_w["Welds Passed"] + df_w["Welds Failed"]
+        
+        def calc_pass(row):
+            return (row["Welds Passed"] / row["Total Welds"] * 100) if row["Total Welds"] > 0 else 0.0
+
+        def calc_fail(row):
+            return (row["Welds Failed"] / row["Total Welds"] * 100) if row["Total Welds"] > 0 else 0.0
+
+        df_w["Pass %"] = df_w.apply(calc_pass, axis=1)
+        df_w["Fail %"] = df_w.apply(calc_fail, axis=1)
+
+        # Filter projects that have actual weld data
+        df_w_active = df_w[df_w["Total Welds"] > 0]
+
+        if not df_w_active.empty:
+            fig_100_stack = go.Figure()
+
+            # 1. Red Fail % at the bottom
+            fig_100_stack.add_trace(go.Bar(
+                x=df_w_active["Project Name"],
+                y=df_w_active["Fail %"],
+                name="Fail %",
+                marker_color="#d32f2f"  # Red
+            ))
+
+            # 2. Green Pass % stacked on top
+            fig_100_stack.add_trace(go.Bar(
+                x=df_w_active["Project Name"],
+                y=df_w_active["Pass %"],
+                name="Pass %",
+                marker_color="#388e3c"  # Green
+            ))
+
+            fig_100_stack.update_layout(
+                barmode="stack",
+                legend=dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=1.02,
+                    xanchor="left",
+                    x=0
+                ),
+                margin=dict(l=20, r=20, t=50, b=20),
+                height=500,
+                paper_bgcolor="rgba(0, 0, 0, 0)",
+                plot_bgcolor="rgba(0, 0, 0, 0)"
+            )
+
+            fig_100_stack.update_yaxes(
+                title_text="Percentage",
+                range=[0, 100],
+                ticksuffix="%",
+                showgrid=True
+            )
+
+            st.plotly_chart(fig_100_stack, use_container_width=True)
+        else:
+            st.info("No welding pass/fail records found in the 'Defects' sheet.")
+
+    # --- RIGHT CHART: DEFECT DISTRIBUTION PIE CHART ---
+    with col_defect_chart:
+        st.subheader("Defect Distribution (Failed Joints)")
+
+        defect_list = [
+            "Leg Size (under/over)", "Undercut", "Lack of Penetration", 
+            "Lack of Fusion", "Underfill", "Cracking", "Porosity", 
+            "Burn Through", "Bead Position", "Inclusion", "Excessive Reinforcement"
+        ]
+
+        # Filter valid defect columns present in df_defects
+        valid_defects = [c for c in defect_list if c in df_defects.columns]
+
+        if valid_defects:
+            defect_totals = df_defects[valid_defects].sum()
+            df_defects_summary = pd.DataFrame({
+                "Defect Type": defect_totals.index,
+                "Count": defect_totals.values
+            })
+
+            # Filter out defects with 0 count
+            df_defects_active = df_defects_summary[df_defects_summary["Count"] > 0]
+
+            if not df_defects_active.empty:
+                fig_pie = go.Figure(go.Pie(
+                    labels=df_defects_active["Defect Type"],
+                    values=df_defects_active["Count"],
+                    hole=0.35,
+                    textinfo="label+percent",
+                    marker=dict(colors=[
+                        "#e53935", "#8e24aa", "#3949ab", "#039be5", 
+                        "#00acc1", "#00897b", "#43a047", "#7cb342", 
+                        "#c0ca33", "#fdd835", "#ffb300"
+                    ])
+                ))
+
+                fig_pie.update_layout(
+                    margin=dict(l=20, r=20, t=30, b=20),
+                    height=500,
+                    paper_bgcolor="rgba(0, 0, 0, 0)",
+                    plot_bgcolor="rgba(0, 0, 0, 0)",
+                    legend=dict(orientation="h", y=-0.1)
+                )
+
+                st.plotly_chart(fig_pie, use_container_width=True)
+            else:
+                st.info("No defect occurrences recorded in the 'Defects' sheet yet.")
+        else:
+            st.info("Defect tracking columns not found in the 'Defects' sheet.")
