@@ -198,13 +198,13 @@ with tab1:
     st.dataframe(
         styler,
         column_config=column_configuration,
-        use_container_width=True,
+        width="stretch",
         hide_index=True
     )
 
     st.divider()
 
-    st.subheader("⭐ QA Rating - Readiness Breakdown")
+    st.subheader("⭐ QA Rating & Readiness Benchmarks")
     
     project_list = df_projects["Project Name"].tolist()
     selected_project = st.selectbox("Select Project to Inspect Ratings:", project_list)
@@ -212,9 +212,18 @@ with tab1:
     project_rating_row = df_ratings[df_ratings["Project Name"] == selected_project]
     project_main_row = df_projects[df_projects["Project Name"] == selected_project]
 
-    col_metrics, col_chart = st.columns([1, 1])
+    categories = [
+        "Software Documentation Provided", 
+        "Product Documentation Provided", 
+        "Robot Availability", 
+        "Bundle Preparation", 
+        "Software Support"
+    ]
 
-    with col_metrics:
+    # --- ROW 1: SELECTED PROJECT METRICS & RADAR CHART ---
+    col_proj_metrics, col_proj_chart = st.columns([1, 1])
+
+    with col_proj_metrics:
         st.markdown(f"#### Recorded Scores for **{selected_project}**")
         
         if not project_rating_row.empty:
@@ -245,22 +254,14 @@ with tab1:
                             break
 
             if release_url:
-                st.link_button("📄 Open QA Release Form", release_url, use_container_width=True)
+                st.link_button("📄 Open QA Release Form", release_url, width="stretch")
 
         else:
             st.warning("No rating record found in the Ratings sheet for this project.")
 
-    with col_chart:
-        st.markdown("#### Performance Radar")
+    with col_proj_chart:
+        st.markdown(f"#### {selected_project} Performance Radar")
         if not project_rating_row.empty:
-            categories = [
-                "Software Documentation Provided", 
-                "Product Documentation Provided", 
-                "Robot Availability", 
-                "Bundle Preparation", 
-                "Software Support"
-            ]
-            
             scores = []
             for cat in categories:
                 val = project_rating_row.iloc[0].get(cat, 0)
@@ -283,30 +284,125 @@ with tab1:
                     radialaxis=dict(
                         visible=True,
                         range=[0, 5],
-                        tickfont=dict(color="black", size=11),
+                        tickfont=dict(color="black", size=10),
                         gridcolor="#d3d3d3"
                     ),
                     angularaxis=dict(
-                        tickfont=dict(color="white", size=11),
+                        tickfont=dict(color="white", size=10),
                         gridcolor="#444444"
                     )
                 ),
                 paper_bgcolor="rgba(0, 0, 0, 0)",
                 plot_bgcolor="rgba(0, 0, 0, 0)",
                 showlegend=False,
-                margin=dict(l=60, r=60, t=30, b=30)
+                margin=dict(l=40, r=40, t=30, b=30)
             )
 
-            st.plotly_chart(fig_radar, use_container_width=True)
+            st.plotly_chart(fig_radar, width="stretch")
         else:
             st.info("No rating data available for this project.")
+
+    st.divider()
+
+    # --- ROW 2: DYNAMIC PORTFOLIO AVERAGE METRICS & RADAR CHART ---
+    avg_time_range = st.selectbox(
+        "Select Portfolio Benchmark Timeframe:",
+        options=["30 Days", "3 Months", "6 Months", "1 Year"],
+        index=3
+    )
+
+    # Calculate dynamic timeframe cutoff
+    if avg_time_range == "30 Days":
+        avg_cutoff = today_date - pd.Timedelta(days=30)
+    elif avg_time_range == "3 Months":
+        avg_cutoff = today_date - pd.Timedelta(days=90)
+    elif avg_time_range == "6 Months":
+        avg_cutoff = today_date - pd.Timedelta(days=180)
+    else:
+        avg_cutoff = today_date - pd.Timedelta(days=365)
+
+    recent_project_names = df_projects[df_projects["Start Date"] >= avg_cutoff]["Project Name"].tolist()
+    df_ratings_avg = df_ratings[df_ratings["Project Name"].isin(recent_project_names)]
+
+    # Fallback to overall ratings if no projects fall inside the date window
+    no_recent_data = False
+    if df_ratings_avg.empty:
+        df_ratings_avg = df_ratings.copy()
+        no_recent_data = True
+
+    col_avg_metrics, col_avg_chart = st.columns([1, 1])
+
+    with col_avg_metrics:
+        st.markdown(f"#### Past {avg_time_range} Portfolio Average Scores")
+        if no_recent_data:
+            st.caption(f"ℹ️ No projects found within the last {avg_time_range}. Displaying overall portfolio averages.")
+
+        def safe_mean(col_name):
+            if col_name in df_ratings_avg.columns:
+                m = pd.to_numeric(df_ratings_avg[col_name], errors="coerce").mean()
+                return f"{m:.1f}" if pd.notnull(m) else "N/A"
+            return "N/A"
+
+        a1, a2 = st.columns(2)
+        a1.metric("Avg Software Docs", f"{safe_mean('Software Documentation Provided')} / 5")
+        a2.metric("Avg Product Docs", f"{safe_mean('Product Documentation Provided')} / 5")
+
+        a3, a4 = st.columns(2)
+        a3.metric("Avg Robot Availability", f"{safe_mean('Robot Availability')} / 5")
+        a4.metric("Avg Bundle Preparation", f"{safe_mean('Bundle Preparation')} / 5")
+
+        a5, a6 = st.columns(2)
+        a5.metric("Avg Software Support", f"{safe_mean('Software Support')} / 5")
+        a6.metric("Avg Release Candidates", f"{safe_mean('Number of Release Candidates')}")
+
+    with col_avg_chart:
+        st.markdown(f"#### Past {avg_time_range} Average Performance Radar")
+        
+        avg_scores = []
+        for cat in categories:
+            if cat in df_ratings_avg.columns:
+                mean_val = pd.to_numeric(df_ratings_avg[cat], errors="coerce").mean()
+                avg_scores.append(float(mean_val) if pd.notnull(mean_val) else 0.0)
+            else:
+                avg_scores.append(0.0)
+
+        fig_avg_radar = go.Figure(go.Scatterpolar(
+            r=avg_scores + [avg_scores[0]],
+            theta=categories + [categories[0]],
+            fill='toself',
+            name=f"{avg_time_range} Average",
+            line_color='#ff9800',
+            fillcolor='rgba(255, 152, 0, 0.35)'
+        ))
+
+        fig_avg_radar.update_layout(
+            polar=dict(
+                bgcolor="white",
+                radialaxis=dict(
+                    visible=True,
+                    range=[0, 5],
+                    tickfont=dict(color="black", size=10),
+                    gridcolor="#d3d3d3"
+                ),
+                angularaxis=dict(
+                    tickfont=dict(color="white", size=10),
+                    gridcolor="#444444"
+                )
+            ),
+            paper_bgcolor="rgba(0, 0, 0, 0)",
+            plot_bgcolor="rgba(0, 0, 0, 0)",
+            showlegend=False,
+            margin=dict(l=40, r=40, t=30, b=30)
+        )
+
+        st.plotly_chart(fig_avg_radar, width="stretch")
 
 # =============================================================================
 # TAB 2: ESTIMATION VS ACTUAL DURATION (COMBO CHART)
 # =============================================================================
 with tab2:
     st.title("📈 Testing Estimation versus Actual Duration")
-    st.caption("Blue = Orignal Estimate, Purple = Days QA spent testing, Green = Original Estimate multiplied by the release candidate (rc) number since a new test iteration is required for each rc")
+    st.caption("Blue = Original Estimate, Purple = Days QA spent testing, Green = Original Estimate multiplied by the release candidate (rc) number since a new test iteration is required for each rc")
 
     fig_combo = make_subplots(specs=[[{"secondary_y": True}]])
 
@@ -379,14 +475,14 @@ with tab2:
         tickformat="d"
     )
 
-    st.plotly_chart(fig_combo, use_container_width=True)
+    st.plotly_chart(fig_combo, width="stretch")
 
 # =============================================================================
 # TAB 3: BUGS REPORTED VS RESOLVED (OVERLAY LOADING BARS)
 # =============================================================================
 with tab3:
     st.title("🐞 Bugs Reported and Bugs Resolved by Bundle")
-    st.caption("Green bars represent the resolved reported bugs during the QA period, the red portion represents the bugs defered to the next release or unresolved bugs")
+    st.caption("Green bars represent the resolved reported bugs during the QA period, the red portion represents the bugs deferred to the next release or unresolved bugs")
 
     tot_reported = int(df_projects["Bugs Reported"].sum())
     tot_resolved = int(df_projects["Bugs Resolved"].sum())
@@ -444,7 +540,7 @@ with tab3:
         dtick=1
     )
 
-    st.plotly_chart(fig_bugs, use_container_width=True)
+    st.plotly_chart(fig_bugs, width="stretch")
 
 # =============================================================================
 # TAB 4: WELDING PASS/FAIL PERCENTAGES & DEFECT BREAKDOWN (FROM DEFECTS TAB)
@@ -513,7 +609,7 @@ with tab4:
                 showgrid=True
             )
 
-            st.plotly_chart(fig_100_stack, use_container_width=True)
+            st.plotly_chart(fig_100_stack, width="stretch")
         else:
             st.info("No welding pass/fail records found in the 'Defects' sheet.")
 
@@ -559,7 +655,7 @@ with tab4:
                     legend=dict(orientation="h", y=-0.1)
                 )
 
-                st.plotly_chart(fig_pie, use_container_width=True)
+                st.plotly_chart(fig_pie, width="stretch")
             else:
                 st.info("No defect occurrences recorded in the 'Defects' sheet yet.")
         else:
