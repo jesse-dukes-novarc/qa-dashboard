@@ -306,7 +306,7 @@ with tab1:
 # =============================================================================
 with tab2:
     st.title("📈 Testing Estimation versus Actual Duration")
-    st.caption("Includes Release Candidate (RC) iterations tracking")
+    st.caption("Blue = Orignal Estimate, Purple = Days QA spent testing, Green = Original Estimate multiplied by the release candidate (rc) number since a new test iteration is required for each rc")
 
     fig_combo = make_subplots(specs=[[{"secondary_y": True}]])
 
@@ -386,7 +386,7 @@ with tab2:
 # =============================================================================
 with tab3:
     st.title("🐞 Bugs Reported and Bugs Resolved by Bundle")
-    st.caption("Progress view: Green resolved bar filling the red reported track")
+    st.caption("Green bars represent the resolved reported bugs during the QA period, the red portion represents the bugs defered to the next release or unresolved bugs")
 
     tot_reported = int(df_projects["Bugs Reported"].sum())
     tot_resolved = int(df_projects["Bugs Resolved"].sum())
