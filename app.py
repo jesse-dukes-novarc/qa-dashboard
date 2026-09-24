@@ -60,7 +60,7 @@ def load_data():
             df_projects[col] = 0.0
 
     # Coerce integer count fields in Projects (cast to whole numbers)
-    int_cols = ["Number of Release Candidates", "Bugs Reported", "Bugs Resolved", "Number of Welds Tested"]
+    int_cols = ["Number of Release Candidates", "Bugs Reported", "Bugs Resolved", "Number of Welds Tested", "Number of Tracers"]
     for col in int_cols:
         if col in df_projects.columns:
             df_projects[col] = pd.to_numeric(df_projects[col], errors="coerce").fillna(0).astype(int)
@@ -153,11 +153,38 @@ with tab1:
         if col_name in df_display.columns:
             df_display[col_name] = df_display[col_name].apply(format_release_link)
 
-    # Configure columns, setting format="%d" on count columns to force whole numbers
+    # Combine Tracers Used (Yes/No) + Number of Tracers if both columns exist
+    if "Tracers Used" in df_display.columns and "Number of Tracers" in df_display.columns:
+        def format_tracers_combined(row):
+            used = str(row["Tracers Used"]).strip()
+            count = row["Number of Tracers"]
+            if used.lower() == "yes" and count > 0:
+                return f"Yes ({count})"
+            elif used.lower() == "yes":
+                return "Yes"
+            return "No"
+            
+        df_display["Tracers"] = df_display.apply(format_tracers_combined, axis=1)
+
+    # Reorder columns so Plate or Pipe Coupons and Tracers appear directly to the left of the QA Release link column
+    link_col_names = ["QA Release Document", "QA Release Form Link"]
+    target_link_col = next((c for c in link_col_names if c in df_display.columns), None)
+    tracer_cols_to_move = [c for c in ["Plate or Pipe Coupons", "Tracers"] if c in df_display.columns]
+
+    if target_link_col and tracer_cols_to_move:
+        remaining_cols = [c for c in df_display.columns if c not in tracer_cols_to_move]
+        if target_link_col in remaining_cols:
+            idx = remaining_cols.index(target_link_col)
+            ordered_cols = remaining_cols[:idx] + tracer_cols_to_move + remaining_cols[idx:]
+            df_display = df_display[ordered_cols]
+
+    # Configure columns
     column_configuration = {
         "Start Date": st.column_config.DateColumn("Start Date", format="YYYY-MM-DD"),
         "Completion Date": st.column_config.DateColumn("Completion Date", format="YYYY-MM-DD"),
         "Pre/Robustness": st.column_config.TextColumn("Pre/Robustness", width="large"),
+        "Plate or Pipe Coupons": st.column_config.TextColumn("Plate or Pipe Coupons", width="medium"),
+        "Tracers": st.column_config.TextColumn("Tracers (Used & Count)", width="medium"),
         "Welding Inspection Required": st.column_config.TextColumn("Welding Req?", width="medium"),
         "Number of Welds Tested": st.column_config.NumberColumn("Number of Welds Tested", format="%d"),
         "Number of Release Candidates": st.column_config.NumberColumn("Number of Release Candidates", format="%d"),
