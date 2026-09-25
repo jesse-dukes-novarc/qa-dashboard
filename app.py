@@ -239,12 +239,15 @@ with tab1:
     project_rating_row = df_ratings[df_ratings["Project Name"] == selected_project]
     project_main_row = df_projects[df_projects["Project Name"] == selected_project]
 
+    # Expanded 7 rating categories
     categories = [
         "Software Documentation Provided", 
         "Product Documentation Provided", 
         "Robot Availability", 
         "Bundle Preparation", 
-        "Software Support"
+        "Software Support",
+        "Stress on QA Resources",
+        "QA Self-Reported Performance"
     ]
 
     # --- ROW 1: SELECTED PROJECT METRICS & RADAR CHART ---
@@ -257,18 +260,36 @@ with tab1:
             p_data = project_rating_row.iloc[0]
             
             m1, m2 = st.columns(2)
-            m1.metric("Software Docs Provided", f"{p_data.get('Software Documentation Provided', 'N/A')} / 5")
-            m2.metric("Product Docs Provided", f"{p_data.get('Product Documentation Provided', 'N/A')} / 5")
+            m1.metric("Software Docs Provided", f"{p_data.get('Software Documentation Provided', 'N/A')} / 10")
+            m2.metric("Product Docs Provided", f"{p_data.get('Product Documentation Provided', 'N/A')} / 10")
             
             m3, m4 = st.columns(2)
-            m3.metric("Robot Availability", f"{p_data.get('Robot Availability', 'N/A')} / 5")
-            m4.metric("Bundle Preparation", f"{p_data.get('Bundle Preparation', 'N/A')} / 5")
+            m3.metric("Robot Availability", f"{p_data.get('Robot Availability', 'N/A')} / 10")
+            m4.metric("Bundle Preparation", f"{p_data.get('Bundle Preparation', 'N/A')} / 10")
             
             m5, m6 = st.columns(2)
-            m5.metric("Software Support", f"{p_data.get('Software Support', 'N/A')} / 5")
-            m6.metric("Release Candidates", f"{int(p_data.get('Number of Release Candidates', 0))}")
+            m5.metric("Software Support", f"{p_data.get('Software Support', 'N/A')} / 10")
+            m6.metric("Stress on QA Resources", f"{p_data.get('Stress on QA Resources', 'N/A')} / 10")
+
+            m7, m8 = st.columns(2)
+            m7.metric("QA Self-Reported Perf", f"{p_data.get('QA Self-Reported Performance', 'N/A')} / 10")
+            m8.metric("Release Candidates", f"{int(p_data.get('Number of Release Candidates', 0))}")
             
-            st.metric("Targeted Test Plan", f"{p_data.get('Targeted Test Plan', 'N/A')}")
+            # Compute overall average score across all 7 rating categories
+            proj_scores = []
+            for cat in categories:
+                try:
+                    val = float(p_data.get(cat, None))
+                    if pd.notnull(val):
+                        proj_scores.append(val)
+                except (ValueError, TypeError):
+                    pass
+            
+            proj_overall_avg = (sum(proj_scores) / len(proj_scores)) if proj_scores else 0.0
+
+            m9, m10 = st.columns(2)
+            m9.metric("Targeted Test Plan", f"{p_data.get('Targeted Test Plan', 'N/A')}")
+            m10.metric("Overall Average Rating", f"{proj_overall_avg:.1f} / 10")
 
             # Render action button if a valid URL exists
             release_url = None
@@ -310,7 +331,7 @@ with tab1:
                     bgcolor="white",
                     radialaxis=dict(
                         visible=True,
-                        range=[0, 5],
+                        range=[0, 10],
                         tickfont=dict(color="black", size=10),
                         gridcolor="#d3d3d3"
                     ),
@@ -371,16 +392,32 @@ with tab1:
             return "N/A"
 
         a1, a2 = st.columns(2)
-        a1.metric("Avg Software Docs", f"{safe_mean('Software Documentation Provided')} / 5")
-        a2.metric("Avg Product Docs", f"{safe_mean('Product Documentation Provided')} / 5")
+        a1.metric("Avg Software Docs", f"{safe_mean('Software Documentation Provided')} / 10")
+        a2.metric("Avg Product Docs", f"{safe_mean('Product Documentation Provided')} / 10")
 
         a3, a4 = st.columns(2)
-        a3.metric("Avg Robot Availability", f"{safe_mean('Robot Availability')} / 5")
-        a4.metric("Avg Bundle Preparation", f"{safe_mean('Bundle Preparation')} / 5")
+        a3.metric("Avg Robot Availability", f"{safe_mean('Robot Availability')} / 10")
+        a4.metric("Avg Bundle Preparation", f"{safe_mean('Bundle Preparation')} / 10")
 
         a5, a6 = st.columns(2)
-        a5.metric("Avg Software Support", f"{safe_mean('Software Support')} / 5")
-        a6.metric("Avg Release Candidates", f"{safe_mean('Number of Release Candidates')}")
+        a5.metric("Avg Software Support", f"{safe_mean('Software Support')} / 10")
+        a6.metric("Avg Stress on QA", f"{safe_mean('Stress on QA Resources')} / 10")
+
+        a7, a8 = st.columns(2)
+        a7.metric("Avg QA Self-Reported Perf", f"{safe_mean('QA Self-Reported Performance')} / 10")
+        a8.metric("Avg Release Candidates", f"{safe_mean('Number of Release Candidates')}")
+
+        # Compute overall portfolio average across all 7 rating factors
+        cat_means = []
+        for cat in categories:
+            if cat in df_ratings_avg.columns:
+                m = pd.to_numeric(df_ratings_avg[cat], errors="coerce").mean()
+                if pd.notnull(m):
+                    cat_means.append(float(m))
+        
+        portfolio_overall_avg = (sum(cat_means) / len(cat_means)) if cat_means else 0.0
+
+        st.metric("Overall Portfolio Average Rating", f"{portfolio_overall_avg:.1f} / 10")
 
     with col_avg_chart:
         st.markdown(f"#### Past {avg_time_range} Average Performance Radar")
@@ -407,7 +444,7 @@ with tab1:
                 bgcolor="white",
                 radialaxis=dict(
                     visible=True,
-                    range=[0, 5],
+                    range=[0, 10],
                     tickfont=dict(color="black", size=10),
                     gridcolor="#d3d3d3"
                 ),
