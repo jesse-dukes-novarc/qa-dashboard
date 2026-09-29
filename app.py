@@ -40,6 +40,12 @@ def load_data():
     except Exception:
         df_defects = pd.DataFrame(columns=["Project Name"])
 
+    # Standardize release candidate estimate column name if spelled out in sheet
+    df_projects = df_projects.rename(columns={
+        "QA Estimate release candidate Dependant": "QA Estimate rc Dependant",
+        "QA Estimate Release Candidate Dependant": "QA Estimate rc Dependant"
+    })
+
     # Format Dates safely
     if "Start Date" in df_projects.columns:
         df_projects["Start Date"] = pd.to_datetime(df_projects["Start Date"], errors="coerce")
@@ -143,11 +149,8 @@ with tab1:
 
     st.subheader("Project Inventory")
     
-    # Exclude Bug metrics and Duration metrics from Tab 1 inventory view
-    hide_columns = [
-        "Bugs Reported", "Bugs Resolved", 
-        "Estimated QA Days", "Actual QA Days", "QA Estimate rc Dependant"
-    ]
+    # Exclude Bug metrics from Tab 1 inventory view
+    hide_columns = ["Bugs Reported", "Bugs Resolved"]
     cols_to_exclude = [c for c in hide_columns if c in df_filtered.columns]
     df_display = df_filtered.drop(columns=cols_to_exclude).copy()
 
@@ -188,7 +191,7 @@ with tab1:
             ordered_cols = remaining_cols[:idx] + tracer_cols_to_move + remaining_cols[idx:]
             df_display = df_display[ordered_cols]
 
-    # Configure columns
+    # Configure columns, strictly enforcing 1 decimal place ("%.1f") on estimation fields
     column_configuration = {
         "Start Date": st.column_config.DateColumn("Start Date", format="YYYY-MM-DD"),
         "Completion Date": st.column_config.DateColumn("Completion Date", format="YYYY-MM-DD"),
@@ -198,10 +201,10 @@ with tab1:
         "Welding Inspection Required": st.column_config.TextColumn("Welding Req?", width="medium"),
         "Number of Welds Tested": st.column_config.NumberColumn("Number of Welds Tested", format="%d"),
         "Number of Release Candidates": st.column_config.NumberColumn("Number of Release Candidates", format="%d"),
-        # Added explicit format for 1 decimal place on estimations, in case they are un-hidden
         "Estimated QA Days": st.column_config.NumberColumn("Estimated QA Days", format="%.1f"),
         "Actual QA Days": st.column_config.NumberColumn("Actual QA Days", format="%.1f"),
         "QA Estimate rc Dependant": st.column_config.NumberColumn("QA Estimate rc Dependant", format="%.1f"),
+        "QA Estimate release candidate Dependant": st.column_config.NumberColumn("QA Estimate rc Dependant", format="%.1f"),
         "QA Release Document": st.column_config.LinkColumn(
             "QA Release Document",
             display_text=r"#(.*)$",
