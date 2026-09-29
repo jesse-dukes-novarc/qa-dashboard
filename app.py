@@ -239,13 +239,16 @@ with tab1:
     project_rating_row = df_ratings[df_ratings["Project Name"] == selected_project]
     project_main_row = df_projects[df_projects["Project Name"] == selected_project]
 
-    # Expanded 7 rating categories
+    # Complete 10 rating categories
     categories = [
         "Software Documentation Provided", 
         "Product Documentation Provided", 
         "Robot Availability", 
         "Bundle Preparation", 
         "Software Support",
+        "Controls Support",
+        "Product Support",
+        "Welding Team Performance",
         "Stress on QA Resources",
         "QA Self-Reported Performance"
     ]
@@ -298,15 +301,21 @@ with tab1:
             
             m5, m6 = st.columns(2)
             m5.metric("Software Support", f"{p_data.get('Software Support', 'N/A')} / 10")
-            m6.metric("Stress on QA Resources", f"{p_data.get('Stress on QA Resources', 'N/A')} / 10")
+            m6.metric("Controls Support", f"{p_data.get('Controls Support', 'N/A')} / 10")
 
             m7, m8 = st.columns(2)
-            m7.metric("QA Self-Reported Perf", f"{p_data.get('QA Self-Reported Performance', 'N/A')} / 10")
-            m8.metric("Release Candidates", f"{int(p_data.get('Number of Release Candidates', 0))}")
+            m7.metric("Product Support", f"{p_data.get('Product Support', 'N/A')} / 10")
+            m8.metric("Welding Team Perf", f"{p_data.get('Welding Team Performance', 'N/A')} / 10")
 
             m9, m10 = st.columns(2)
-            m9.metric("Targeted Test Plan", f"{p_data.get('Targeted Test Plan', 'N/A')}")
-            m10.metric("Overall Average Rating", f"{proj_overall_avg:.1f} / 10")
+            m9.metric("Stress on QA Resources", f"{p_data.get('Stress on QA Resources', 'N/A')} / 10")
+            m10.metric("QA Self-Reported Perf", f"{p_data.get('QA Self-Reported Performance', 'N/A')} / 10")
+
+            m11, m12 = st.columns(2)
+            m11.metric("Release Candidates", f"{int(p_data.get('Number of Release Candidates', 0))}")
+            m12.metric("Targeted Test Plan", f"{p_data.get('Targeted Test Plan', 'N/A')}")
+
+            st.metric("Overall Average Rating", f"{proj_overall_avg:.1f} / 10")
 
             # Render action button if a valid URL exists
             release_url = None
@@ -411,13 +420,19 @@ with tab1:
 
         a5, a6 = st.columns(2)
         a5.metric("Avg Software Support", f"{safe_mean('Software Support')} / 10")
-        a6.metric("Avg Stress on QA", f"{safe_mean('Stress on QA Resources')} / 10")
+        a6.metric("Avg Controls Support", f"{safe_mean('Controls Support')} / 10")
 
         a7, a8 = st.columns(2)
-        a7.metric("Avg QA Self-Reported Perf", f"{safe_mean('QA Self-Reported Performance')} / 10")
-        a8.metric("Avg Release Candidates", f"{safe_mean('Number of Release Candidates')}")
+        a7.metric("Avg Product Support", f"{safe_mean('Product Support')} / 10")
+        a8.metric("Avg Welding Team Perf", f"{safe_mean('Welding Team Performance')} / 10")
 
-        # Compute overall portfolio average across all 7 rating factors
+        a9, a10 = st.columns(2)
+        a9.metric("Avg Stress on QA", f"{safe_mean('Stress on QA Resources')} / 10")
+        a10.metric("Avg QA Self-Reported Perf", f"{safe_mean('QA Self-Reported Performance')} / 10")
+
+        st.metric("Avg Release Candidates", f"{safe_mean('Number of Release Candidates')}")
+
+        # Compute overall portfolio average across all 10 rating factors
         cat_means = []
         for cat in categories:
             if cat in df_ratings_avg.columns:
