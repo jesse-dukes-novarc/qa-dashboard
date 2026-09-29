@@ -51,22 +51,19 @@ def load_data():
         rc_data = df_ratings[["Project Name", "Number of Release Candidates"]].drop_duplicates(subset=["Project Name"])
         df_projects = pd.merge(df_projects, rc_data, on="Project Name", how="left")
 
-    # Coerce numeric floating-point fields in Projects
-    float_cols = ["Estimated QA Days", "Actual QA Days"]
+    # Coerce numeric floating-point fields in Projects (Round to 1 decimal)
+    float_cols = ["Estimated QA Days", "Actual QA Days", "QA Estimate rc Dependant"]
     for col in float_cols:
         if col in df_projects.columns:
-            df_projects[col] = pd.to_numeric(df_projects[col], errors="coerce").fillna(0.0)
+            df_projects[col] = pd.to_numeric(df_projects[col], errors="coerce").fillna(0.0).round(1)
         else:
             df_projects[col] = 0.0
 
     # Coerce integer count fields in Projects (cast to whole numbers)
-    int_cols = [
-        "Number of Release Candidates", "Bugs Reported", "Bugs Resolved", 
-        "Number of Welds Tested", "Number of Tracers", "QA Estimate rc Dependant"
-    ]
+    int_cols = ["Number of Release Candidates", "Bugs Reported", "Bugs Resolved", "Number of Welds Tested", "Number of Tracers"]
     for col in int_cols:
         if col in df_projects.columns:
-            df_projects[col] = pd.to_numeric(df_projects[col], errors="coerce").fillna(0).round().astype(int)
+            df_projects[col] = pd.to_numeric(df_projects[col], errors="coerce").fillna(0).astype(int)
         else:
             df_projects[col] = 0
 
@@ -201,6 +198,10 @@ with tab1:
         "Welding Inspection Required": st.column_config.TextColumn("Welding Req?", width="medium"),
         "Number of Welds Tested": st.column_config.NumberColumn("Number of Welds Tested", format="%d"),
         "Number of Release Candidates": st.column_config.NumberColumn("Number of Release Candidates", format="%d"),
+        # Added explicit format for 1 decimal place on estimations, in case they are un-hidden
+        "Estimated QA Days": st.column_config.NumberColumn("Estimated QA Days", format="%.1f"),
+        "Actual QA Days": st.column_config.NumberColumn("Actual QA Days", format="%.1f"),
+        "QA Estimate rc Dependant": st.column_config.NumberColumn("QA Estimate rc Dependant", format="%.1f"),
         "QA Release Document": st.column_config.LinkColumn(
             "QA Release Document",
             display_text=r"#(.*)$",
@@ -528,7 +529,9 @@ with tab2:
             x=df_projects["Project Name"],
             y=df_projects["Estimated QA Days"],
             name="Estimated QA Days",
-            marker_color="#29b6f6"
+            marker_color="#29b6f6",
+            text=df_projects["Estimated QA Days"],
+            textposition="auto"
         ),
         secondary_y=False,
     )
@@ -538,7 +541,9 @@ with tab2:
             x=df_projects["Project Name"],
             y=df_projects["Actual QA Days"],
             name="Actual QA Days",
-            marker_color="#ab47bc"
+            marker_color="#ab47bc",
+            text=df_projects["Actual QA Days"],
+            textposition="auto"
         ),
         secondary_y=False,
     )
@@ -548,7 +553,9 @@ with tab2:
             x=df_projects["Project Name"],
             y=df_projects["QA Estimate rc Dependant"],
             name="QA Estimate rc Dependant",
-            marker_color="#9ccc65"
+            marker_color="#9ccc65",
+            text=df_projects["QA Estimate rc Dependant"],
+            textposition="auto"
         ),
         secondary_y=False,
     )
