@@ -52,7 +52,7 @@ def load_data():
         df_projects = pd.merge(df_projects, rc_data, on="Project Name", how="left")
 
     # Coerce numeric floating-point fields in Projects
-    float_cols = ["Estimated QA Days", "Actual QA Days", "QA Estimate rc Dependant"]
+    float_cols = ["Estimated QA Days", "Actual QA Days"]
     for col in float_cols:
         if col in df_projects.columns:
             df_projects[col] = pd.to_numeric(df_projects[col], errors="coerce").fillna(0.0)
@@ -60,10 +60,13 @@ def load_data():
             df_projects[col] = 0.0
 
     # Coerce integer count fields in Projects (cast to whole numbers)
-    int_cols = ["Number of Release Candidates", "Bugs Reported", "Bugs Resolved", "Number of Welds Tested", "Number of Tracers"]
+    int_cols = [
+        "Number of Release Candidates", "Bugs Reported", "Bugs Resolved", 
+        "Number of Welds Tested", "Number of Tracers", "QA Estimate rc Dependant"
+    ]
     for col in int_cols:
         if col in df_projects.columns:
-            df_projects[col] = pd.to_numeric(df_projects[col], errors="coerce").fillna(0).astype(int)
+            df_projects[col] = pd.to_numeric(df_projects[col], errors="coerce").fillna(0).round().astype(int)
         else:
             df_projects[col] = 0
 
@@ -351,7 +354,6 @@ with tab1:
     with col_proj_chart:
         st.markdown(f"#### {selected_project} Performance Radar")
         if not project_rating_row.empty:
-            # Append initial value to close radar loop cleanly
             r_closed = radar_r + [radar_r[0] if radar_r else None]
             theta_closed = categories + [categories[0]]
 
@@ -359,7 +361,7 @@ with tab1:
                 r=r_closed,
                 theta=theta_closed,
                 fill='toself',
-                connectgaps=True,  # Seamlessly bridges over missing/blank factors
+                connectgaps=True,
                 name=selected_project,
                 line_color=radar_line_color,
                 fillcolor=radar_fill_color
