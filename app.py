@@ -89,6 +89,16 @@ except Exception as e:
     st.error(f"Error loading dashboard data: {e}")
     st.stop()
 
+# Helper function to format rating values or show "N/A" for blank cells
+def fmt_rating(val):
+    try:
+        num = float(val)
+        if pd.notnull(num):
+            return f"{num:.1f} / 10" if num % 1 != 0 else f"{int(num)} / 10"
+    except (ValueError, TypeError):
+        pass
+    return "N/A"
+
 # -----------------------------------------------------------------------------
 # 2. SIDEBAR REFRESH & TAB NAVIGATION
 # -----------------------------------------------------------------------------
@@ -253,29 +263,34 @@ with tab1:
         "QA Self-Reported Performance"
     ]
 
-    # Pre-calculate scores & overall average for the selected project
-    proj_scores = []
-    proj_overall_avg = 0.0
+    # Process individual scores, safely handling blank (NaN) cells
+    valid_scores = []
+    radar_r = []
 
     if not project_rating_row.empty:
         p_data = project_rating_row.iloc[0]
         for cat in categories:
+            val = p_data.get(cat, None)
             try:
-                val = float(p_data.get(cat, None))
-                if pd.notnull(val):
-                    proj_scores.append(val)
+                num_val = float(val)
+                if pd.notnull(num_val):
+                    valid_scores.append(num_val)
+                    radar_r.append(num_val)
                 else:
-                    proj_scores.append(0.0)
+                    radar_r.append(None)
             except (ValueError, TypeError):
-                proj_scores.append(0.0)
+                radar_r.append(None)
         
-        proj_overall_avg = (sum(proj_scores) / len(proj_scores)) if proj_scores else 0.0
+        # Calculate mean using ONLY non-null valid scores
+        proj_overall_avg = (sum(valid_scores) / len(valid_scores)) if valid_scores else 0.0
+    else:
+        proj_overall_avg = 0.0
 
-    # Determine dynamic radar colors based on overall average thresholds
-    if proj_overall_avg > 9:
+    # Dynamic radar threshold coloring
+    if proj_overall_avg > 8.8:
         radar_line_color = "#2e7d32"       # Green
         radar_fill_color = "rgba(46, 125, 50, 0.35)"
-    elif proj_overall_avg >= 7.9:
+    elif proj_overall_avg >= 7.2:
         radar_line_color = "#ffb300"       # Yellow/Amber
         radar_fill_color = "rgba(255, 179, 0, 0.35)"
     else:
@@ -292,30 +307,30 @@ with tab1:
             p_data = project_rating_row.iloc[0]
             
             m1, m2 = st.columns(2)
-            m1.metric("Software Docs Provided", f"{p_data.get('Software Documentation Provided', 'N/A')} / 10")
-            m2.metric("Product Docs Provided", f"{p_data.get('Product Documentation Provided', 'N/A')} / 10")
+            m1.metric("Software Docs Provided", fmt_rating(p_data.get('Software Documentation Provided')))
+            m2.metric("Product Docs Provided", fmt_rating(p_data.get('Product Documentation Provided')))
             
             m3, m4 = st.columns(2)
-            m3.metric("Robot Availability", f"{p_data.get('Robot Availability', 'N/A')} / 10")
-            m4.metric("Bundle Preparation", f"{p_data.get('Bundle Preparation', 'N/A')} / 10")
+            m3.metric("Robot Availability", fmt_rating(p_data.get('Robot Availability')))
+            m4.metric("Bundle Preparation", fmt_rating(p_data.get('Bundle Preparation')))
             
             m5, m6 = st.columns(2)
-            m5.metric("Software Support", f"{p_data.get('Software Support', 'N/A')} / 10")
-            m6.metric("Controls Support", f"{p_data.get('Controls Support', 'N/A')} / 10")
+            m5.metric("Software Support", fmt_rating(p_data.get('Software Support')))
+            m6.metric("Controls Support", fmt_rating(p_data.get('Controls Support')))
 
             m7, m8 = st.columns(2)
-            m7.metric("Product Support", f"{p_data.get('Product Support', 'N/A')} / 10")
-            m8.metric("Welding Team Perf", f"{p_data.get('Welding Team Performance', 'N/A')} / 10")
+            m7.metric("Product Support", fmt_rating(p_data.get('Product Support')))
+            m8.metric("Welding Team Perf", fmt_rating(p_data.get('Welding Team Performance')))
 
             m9, m10 = st.columns(2)
-            m9.metric("Stress on QA Resources", f"{p_data.get('Stress on QA Resources', 'N/A')} / 10")
-            m10.metric("QA Self-Reported Perf", f"{p_data.get('QA Self-Reported Performance', 'N/A')} / 10")
+            m9.metric("Stress on QA Resources", fmt_rating(p_data.get('Stress on QA Resources')))
+            m10.metric("QA Self-Reported Perf", fmt_rating(p_data.get('QA Self-Reported Performance')))
 
             m11, m12 = st.columns(2)
             m11.metric("Release Candidates", f"{int(p_data.get('Number of Release Candidates', 0))}")
             m12.metric("Targeted Test Plan", f"{p_data.get('Targeted Test Plan', 'N/A')}")
 
-            st.metric("Overall Average Rating", f"{proj_overall_avg:.1f} / 10")
+            st.metric("Overall Average Rating", f"{proj_overall_avg:.1f} / 10" if valid_scores else "N/A")
 
             # Render action button if a valid URL exists
             release_url = None
@@ -336,10 +351,15 @@ with tab1:
     with col_proj_chart:
         st.markdown(f"#### {selected_project} Performance Radar")
         if not project_rating_row.empty:
+            # Append initial value to close radar loop cleanly
+            r_closed = radar_r + [radar_r[0] if radar_r else None]
+            theta_closed = categories + [categories[0]]
+
             fig_radar = go.Figure(go.Scatterpolar(
-                r=proj_scores + [proj_scores[0]],
-                theta=categories + [categories[0]],
+                r=r_closed,
+                theta=theta_closed,
                 fill='toself',
+                connectgaps=True,  # Seamlessly bridges over missing/blank factors
                 name=selected_project,
                 line_color=radar_line_color,
                 fillcolor=radar_fill_color
@@ -407,32 +427,34 @@ with tab1:
         def safe_mean(col_name):
             if col_name in df_ratings_avg.columns:
                 m = pd.to_numeric(df_ratings_avg[col_name], errors="coerce").mean()
-                return f"{m:.1f}" if pd.notnull(m) else "N/A"
+                return f"{m:.1f} / 10" if pd.notnull(m) else "N/A"
             return "N/A"
 
         a1, a2 = st.columns(2)
-        a1.metric("Avg Software Docs", f"{safe_mean('Software Documentation Provided')} / 10")
-        a2.metric("Avg Product Docs", f"{safe_mean('Product Documentation Provided')} / 10")
+        a1.metric("Avg Software Docs", safe_mean('Software Documentation Provided'))
+        a2.metric("Avg Product Docs", safe_mean('Product Documentation Provided'))
 
         a3, a4 = st.columns(2)
-        a3.metric("Avg Robot Availability", f"{safe_mean('Robot Availability')} / 10")
-        a4.metric("Avg Bundle Preparation", f"{safe_mean('Bundle Preparation')} / 10")
+        a3.metric("Avg Robot Availability", safe_mean('Robot Availability'))
+        a4.metric("Avg Bundle Preparation", safe_mean('Bundle Preparation'))
 
         a5, a6 = st.columns(2)
-        a5.metric("Avg Software Support", f"{safe_mean('Software Support')} / 10")
-        a6.metric("Avg Controls Support", f"{safe_mean('Controls Support')} / 10")
+        a5.metric("Avg Software Support", safe_mean('Software Support'))
+        a6.metric("Avg Controls Support", safe_mean('Controls Support'))
 
         a7, a8 = st.columns(2)
-        a7.metric("Avg Product Support", f"{safe_mean('Product Support')} / 10")
-        a8.metric("Avg Welding Team Perf", f"{safe_mean('Welding Team Performance')} / 10")
+        a7.metric("Avg Product Support", safe_mean('Product Support'))
+        a8.metric("Avg Welding Team Perf", safe_mean('Welding Team Performance'))
 
         a9, a10 = st.columns(2)
-        a9.metric("Avg Stress on QA", f"{safe_mean('Stress on QA Resources')} / 10")
-        a10.metric("Avg QA Self-Reported Perf", f"{safe_mean('QA Self-Reported Performance')} / 10")
+        a9.metric("Avg Stress on QA", safe_mean('Stress on QA Resources'))
+        a10.metric("Avg QA Self-Reported Perf", safe_mean('QA Self-Reported Performance'))
 
-        st.metric("Avg Release Candidates", f"{safe_mean('Number of Release Candidates')}")
+        if "Number of Release Candidates" in df_ratings_avg.columns:
+            rc_m = pd.to_numeric(df_ratings_avg["Number of Release Candidates"], errors="coerce").mean()
+            st.metric("Avg Release Candidates", f"{rc_m:.1f}" if pd.notnull(rc_m) else "N/A")
 
-        # Compute overall portfolio average across all 10 rating factors
+        # Compute overall portfolio average across all 10 rating factors (ignoring NaN)
         cat_means = []
         for cat in categories:
             if cat in df_ratings_avg.columns:
@@ -442,7 +464,7 @@ with tab1:
         
         portfolio_overall_avg = (sum(cat_means) / len(cat_means)) if cat_means else 0.0
 
-        st.metric("Overall Portfolio Average Rating", f"{portfolio_overall_avg:.1f} / 10")
+        st.metric("Overall Portfolio Average Rating", f"{portfolio_overall_avg:.1f} / 10" if cat_means else "N/A")
 
     with col_avg_chart:
         st.markdown(f"#### Past {avg_time_range} Average Performance Radar")
@@ -451,14 +473,18 @@ with tab1:
         for cat in categories:
             if cat in df_ratings_avg.columns:
                 mean_val = pd.to_numeric(df_ratings_avg[cat], errors="coerce").mean()
-                avg_scores.append(float(mean_val) if pd.notnull(mean_val) else 0.0)
+                avg_scores.append(float(mean_val) if pd.notnull(mean_val) else None)
             else:
-                avg_scores.append(0.0)
+                avg_scores.append(None)
+
+        avg_r_closed = avg_scores + [avg_scores[0] if avg_scores else None]
+        avg_theta_closed = categories + [categories[0]]
 
         fig_avg_radar = go.Figure(go.Scatterpolar(
-            r=avg_scores + [avg_scores[0]],
-            theta=categories + [categories[0]],
+            r=avg_r_closed,
+            theta=avg_theta_closed,
             fill='toself',
+            connectgaps=True,
             name=f"{avg_time_range} Average",
             line_color='#ff9800',
             fillcolor='rgba(255, 152, 0, 0.35)'
