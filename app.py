@@ -272,10 +272,10 @@ with tab1:
         proj_overall_avg = (sum(proj_scores) / len(proj_scores)) if proj_scores else 0.0
 
     # Determine dynamic radar colors based on overall average thresholds
-    if proj_overall_avg > 8.8:
+    if proj_overall_avg > 9:
         radar_line_color = "#2e7d32"       # Green
         radar_fill_color = "rgba(46, 125, 50, 0.35)"
-    elif proj_overall_avg >= 7.2:
+    elif proj_overall_avg >= 7.9:
         radar_line_color = "#ffb300"       # Yellow/Amber
         radar_fill_color = "rgba(255, 179, 0, 0.35)"
     else:
