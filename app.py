@@ -250,6 +250,35 @@ with tab1:
         "QA Self-Reported Performance"
     ]
 
+    # Pre-calculate scores & overall average for the selected project
+    proj_scores = []
+    proj_overall_avg = 0.0
+
+    if not project_rating_row.empty:
+        p_data = project_rating_row.iloc[0]
+        for cat in categories:
+            try:
+                val = float(p_data.get(cat, None))
+                if pd.notnull(val):
+                    proj_scores.append(val)
+                else:
+                    proj_scores.append(0.0)
+            except (ValueError, TypeError):
+                proj_scores.append(0.0)
+        
+        proj_overall_avg = (sum(proj_scores) / len(proj_scores)) if proj_scores else 0.0
+
+    # Determine dynamic radar colors based on overall average thresholds
+    if proj_overall_avg > 8.8:
+        radar_line_color = "#2e7d32"       # Green
+        radar_fill_color = "rgba(46, 125, 50, 0.35)"
+    elif proj_overall_avg >= 7.2:
+        radar_line_color = "#ffb300"       # Yellow/Amber
+        radar_fill_color = "rgba(255, 179, 0, 0.35)"
+    else:
+        radar_line_color = "#d32f2f"       # Red
+        radar_fill_color = "rgba(211, 47, 47, 0.35)"
+
     # --- ROW 1: SELECTED PROJECT METRICS & RADAR CHART ---
     col_proj_metrics, col_proj_chart = st.columns([1, 1])
 
@@ -274,18 +303,6 @@ with tab1:
             m7, m8 = st.columns(2)
             m7.metric("QA Self-Reported Perf", f"{p_data.get('QA Self-Reported Performance', 'N/A')} / 10")
             m8.metric("Release Candidates", f"{int(p_data.get('Number of Release Candidates', 0))}")
-            
-            # Compute overall average score across all 7 rating categories
-            proj_scores = []
-            for cat in categories:
-                try:
-                    val = float(p_data.get(cat, None))
-                    if pd.notnull(val):
-                        proj_scores.append(val)
-                except (ValueError, TypeError):
-                    pass
-            
-            proj_overall_avg = (sum(proj_scores) / len(proj_scores)) if proj_scores else 0.0
 
             m9, m10 = st.columns(2)
             m9.metric("Targeted Test Plan", f"{p_data.get('Targeted Test Plan', 'N/A')}")
@@ -310,20 +327,13 @@ with tab1:
     with col_proj_chart:
         st.markdown(f"#### {selected_project} Performance Radar")
         if not project_rating_row.empty:
-            scores = []
-            for cat in categories:
-                val = project_rating_row.iloc[0].get(cat, 0)
-                try: 
-                    scores.append(float(val))
-                except (ValueError, TypeError): 
-                    scores.append(0.0)
-
             fig_radar = go.Figure(go.Scatterpolar(
-                r=scores + [scores[0]],
+                r=proj_scores + [proj_scores[0]],
                 theta=categories + [categories[0]],
                 fill='toself',
                 name=selected_project,
-                line_color='#0068c9'
+                line_color=radar_line_color,
+                fillcolor=radar_fill_color
             ))
 
             fig_radar.update_layout(
