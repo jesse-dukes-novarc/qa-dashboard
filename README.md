@@ -33,7 +33,7 @@ chmod +x package.sh
 ./package.sh  
 Output: qa-dashboard.tar.gz
 
-## **Step 2:** Transfer to the AWS Instance  
+### **Step 2:** Transfer to the AWS Instance  
 Use Secure Copy (scp) to send the package to your AWS server.
 
 Bash
@@ -62,7 +62,8 @@ Check that the background service is running successfully:
 Bash
 
 sudo systemctl status qadashboard  
-Step 5: AWS Network Configuration  
+
+## Step 5: AWS Network Configuration  
 For the dashboard to be accessible in a web browser, the AWS architect must configure the EC2 Security Group:
 
 Inbound Rules: Allow Custom TCP on Port 8501 (from your corporate IP or 0.0.0.0/0).
