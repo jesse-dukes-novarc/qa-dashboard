@@ -29,41 +29,41 @@ Run the packaging script in your local terminal. This bundles the app, requireme
 
 Bash
 
-chmod +x package.sh
-./package.sh
+chmod +x package.sh  
+./package.sh  
 Output: qa-dashboard.tar.gz
 
-**Step 2:** Transfer to the AWS Instance
+**Step 2:** Transfer to the AWS Instance  
 Use Secure Copy (scp) to send the package to your AWS server.
 
 Bash
 
-scp -i /path/to/your-aws-key.pem qa-dashboard.tar.gz ubuntu@<AWS_INSTANCE_IP>:~
-Step 3: Connect and Install on AWS
-SSH into the EC2 instance, unpack the archive, and run the automated install script.
+scp -i /path/to/your-aws-key.pem qa-dashboard.tar.gz ubuntu@<AWS_INSTANCE_IP>:~  
+Step 3: Connect and Install on AWS  
+SSH into the EC2 instance, unpack the archive, and run the automated install script.  
 
 Bash
 
-# 1. Connect to the server
+# 1. Connect to the server  
 ssh -i /path/to/your-aws-key.pem ubuntu@<AWS_INSTANCE_IP>
 
-# 2. Extract the package
-mkdir -p ~/qa-dashboard
-tar -xzvf qa-dashboard.tar.gz -C ~/qa-dashboard
-cd ~/qa-dashboard
+# 2. Extract the package  
+mkdir -p ~/qa-dashboard  
+tar -xzvf qa-dashboard.tar.gz -C ~/qa-dashboard  
+cd ~/qa-dashboard  
 
-# 3. Run the installation script
-chmod +x install.sh
-./install.sh
+# 3. Run the installation script  
+chmod +x install.sh  
+./install.sh  
 The install.sh script automatically installs Python dependencies, configures the virtual environment, and sets up Streamlit as a systemd service so it runs continuously in the background.
 
-Step 4: Verify the Application
+Step 4: Verify the Application  
 Check that the background service is running successfully:
 
 Bash
 
-sudo systemctl status qadashboard
-Step 5: AWS Network Configuration
+sudo systemctl status qadashboard  
+Step 5: AWS Network Configuration  
 For the dashboard to be accessible in a web browser, the AWS architect must configure the EC2 Security Group:
 
 Inbound Rules: Allow Custom TCP on Port 8501 (from your corporate IP or 0.0.0.0/0).
