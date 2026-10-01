@@ -43,15 +43,15 @@ Step 3: Connect and Install on AWS
 SSH into the EC2 instance, unpack the archive, and run the automated install script.  
 
 
-### 1. Connect to the server  
+#### 1. Connect to the server  
 ssh -i /path/to/your-aws-key.pem ubuntu@<AWS_INSTANCE_IP>
 
-### 2. Extract the package  
+#### 2. Extract the package  
 mkdir -p ~/qa-dashboard  
 tar -xzvf qa-dashboard.tar.gz -C ~/qa-dashboard  
 cd ~/qa-dashboard  
 
-### 3. Run the installation script  
+#### 3. Run the installation script  
 chmod +x install.sh  
 ./install.sh  
 The install.sh script automatically installs Python dependencies, configures the virtual environment, and sets up Streamlit as a systemd service so it runs continuously in the background.
