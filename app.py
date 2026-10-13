@@ -166,6 +166,30 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "⚠️ T2 Support & Ratings"
 ])
 
+# =============================================================================
+# REUSABLE FORMAT HELPER
+# =============================================================================
+
+def format_radar_layout(fig):
+    fig.update_layout(
+        polar=dict(
+            bgcolor="rgba(0, 0, 0, 0)",
+            radialaxis=dict(
+                visible=True,
+                range=[0, 10],
+                tickfont=dict(size=10),
+                gridcolor="rgba(128, 128, 128, 0.25)",
+            ),
+            angularaxis=dict(
+                tickfont=dict(size=10),
+                gridcolor="rgba(128, 128, 128, 0.25)",
+            ),
+        ),
+        paper_bgcolor="rgba(0, 0, 0, 0)",
+        plot_bgcolor="rgba(0, 0, 0, 0)",
+        showlegend=False,
+        margin=dict(l=40, r=40, t=30, b=30),
+    )
 
 # =============================================================================
 # TAB 1: SUMMARY & READ-ONLY RATINGS
@@ -408,37 +432,21 @@ with tab1:
             r_closed = radar_r + [radar_r[0] if radar_r else None]
             theta_closed = categories + [categories[0]]
 
-            fig_radar = go.Figure(go.Scatterpolar(
-                r=r_closed,
-                theta=theta_closed,
-                fill='toself',
-                connectgaps=True,
-                name=selected_project,
-                line_color=radar_line_color,
-                fillcolor=radar_fill_color
-            ))
-
-            fig_radar.update_layout(
-                polar=dict(
-                    bgcolor="white",
-                    radialaxis=dict(
-                        visible=True,
-                        range=[0, 10],
-                        tickfont=dict(color="black", size=10),
-                        gridcolor="#d3d3d3"
-                    ),
-                    angularaxis=dict(
-                        tickfont=dict(color="white", size=10),
-                        gridcolor="#444444"
-                    )
-                ),
-                paper_bgcolor="rgba(0, 0, 0, 0)",
-                plot_bgcolor="rgba(0, 0, 0, 0)",
-                showlegend=False,
-                margin=dict(l=40, r=40, t=30, b=30)
+            fig_radar = go.Figure(
+                go.Scatterpolar(
+                    r=r_closed,
+                    theta=theta_closed,
+                    fill="toself",
+                    connectgaps=True,
+                    name=selected_project,
+                    line_color=radar_line_color,
+                    fillcolor=radar_fill_color,
+                )
             )
 
+            format_radar_layout(fig_radar)
             st.plotly_chart(fig_radar, width="stretch")
+
         else:
             st.info("No rating data available for this project.")
 
@@ -533,36 +541,19 @@ with tab1:
         avg_r_closed = avg_scores + [avg_scores[0] if avg_scores else None]
         avg_theta_closed = categories + [categories[0]]
 
-        fig_avg_radar = go.Figure(go.Scatterpolar(
-            r=avg_r_closed,
-            theta=avg_theta_closed,
-            fill='toself',
-            connectgaps=True,
-            name=f"{avg_time_range} Average",
-            line_color='#ff9800',
-            fillcolor='rgba(255, 152, 0, 0.35)'
-        ))
-
-        fig_avg_radar.update_layout(
-            polar=dict(
-                bgcolor="white",
-                radialaxis=dict(
-                    visible=True,
-                    range=[0, 10],
-                    tickfont=dict(color="black", size=10),
-                    gridcolor="#d3d3d3"
-                ),
-                angularaxis=dict(
-                    tickfont=dict(color="white", size=10),
-                    gridcolor="#444444"
-                )
-            ),
-            paper_bgcolor="rgba(0, 0, 0, 0)",
-            plot_bgcolor="rgba(0, 0, 0, 0)",
-            showlegend=False,
-            margin=dict(l=40, r=40, t=30, b=30)
+        fig_avg_radar = go.Figure(
+            go.Scatterpolar(
+                r=avg_r_closed,
+                theta=avg_theta_closed,
+                fill="toself",
+                connectgaps=True,
+                name=f"{avg_time_range} Average",
+                line_color="#ff9800",
+                fillcolor="rgba(255, 152, 0, 0.35)",
+            )
         )
 
+        format_radar_layout(fig_avg_radar)
         st.plotly_chart(fig_avg_radar, width="stretch")
 
 # =============================================================================
@@ -1071,37 +1062,21 @@ with tab5:
                 r_closed_t2 = radar_r_t2 + [radar_r_t2[0] if radar_r_t2 else None]
                 theta_closed_t2 = categories + [categories[0]]
 
-                fig_radar_t2 = go.Figure(go.Scatterpolar(
-                    r=r_closed_t2,
-                    theta=theta_closed_t2,
-                    fill='toself',
-                    connectgaps=True,
-                    name=selected_project_t2,
-                    line_color=radar_line_color_t2,
-                    fillcolor=radar_fill_color_t2
-                ))
+                fig_radar_t2 = go.Figure(
+                    go.Scatterpolar(
+                        r=r_closed_t2,
+                        theta=theta_closed_t2,
+                        fill="toself",
+                        connectgaps=True,
+                        name=selected_project_t2,
+                        line_color=radar_line_color_t2,
+                        fillcolor=radar_fill_color_t2,
+                    )
+                ) 
 
-                fig_radar_t2.update_layout(
-                    polar=dict(
-                        bgcolor="white",
-                        radialaxis=dict(
-                            visible=True,
-                            range=[0, 10],
-                            tickfont=dict(color="black", size=10),
-                            gridcolor="#d3d3d3"
-                        ),
-                        angularaxis=dict(
-                            tickfont=dict(color="white", size=10),
-                            gridcolor="#444444"
-                        )
-                    ),
-                    paper_bgcolor="rgba(0, 0, 0, 0)",
-                    plot_bgcolor="rgba(0, 0, 0, 0)",
-                    showlegend=False,
-                    margin=dict(l=40, r=40, t=30, b=30)
-                )
-
+                format_radar_layout(fig_radar_t2)
                 st.plotly_chart(fig_radar_t2, width="stretch")
+
             else:
                 st.info("No rating data available for this project.")
 
@@ -1195,36 +1170,20 @@ with tab5:
             avg_r_closed_t2 = avg_scores_t2 + [avg_scores_t2[0] if avg_scores_t2 else None]
             avg_theta_closed_t2 = categories + [categories[0]]
 
-            fig_avg_radar_t2 = go.Figure(go.Scatterpolar(
-                r=avg_r_closed_t2,
-                theta=avg_theta_closed_t2,
-                fill='toself',
-                connectgaps=True,
-                name=f"{avg_time_range_t2} Average",
-                line_color='#ff9800',
-                fillcolor='rgba(255, 152, 0, 0.35)'
-            ))
-
-            fig_avg_radar_t2.update_layout(
-                polar=dict(
-                    bgcolor="white",
-                    radialaxis=dict(
-                        visible=True,
-                        range=[0, 10],
-                        tickfont=dict(color="black", size=10),
-                        gridcolor="#d3d3d3"
-                    ),
-                    angularaxis=dict(
-                        tickfont=dict(color="white", size=10),
-                        gridcolor="#444444"
-                    )
-                ),
-                paper_bgcolor="rgba(0, 0, 0, 0)",
-                plot_bgcolor="rgba(0, 0, 0, 0)",
-                showlegend=False,
-                margin=dict(l=40, r=40, t=30, b=30)
+            fig_avg_radar_t2 = go.Figure(
+                go.Scatterpolar(
+                    r=avg_r_closed_t2,
+                    theta=avg_theta_closed_t2,
+                    fill="toself",
+                    connectgaps=True,
+                    name=f"{avg_time_range_t2} Average",
+                    line_color="#ff9800",
+                    fillcolor="rgba(255, 152, 0, 0.35)",
+                )
             )
 
+            format_radar_layout(fig_avg_radar_t2)
             st.plotly_chart(fig_avg_radar_t2, width="stretch")
+
     else:
         st.info("No T2 data available yet in the spreadsheet.")
