@@ -8,13 +8,13 @@ from streamlit_gsheets import GSheetsConnection
 st.set_page_config(page_title="QA Project Dashboard", layout="wide", page_icon="📊")
 
 # -----------------------------------------------------------------------------
-# 1. READ-ONLY DATA LOADER (FETCHES PROJECTS, RATINGS & DEFECTS TABS)
+# 1. READ-ONLY DATA LOADER (FETCHES PROJECTS, RATINGS, DEFECTS, T2, & T2 RATINGS)
 # -----------------------------------------------------------------------------
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 @st.cache_data(ttl=60)
 def load_data():
-    def fetch_sheet(worksheet_name):
+    def fetch_sheet(worksheet_name, subset_col="Project Name"):
         df = conn.read(worksheet=worksheet_name, header=6)
         
         # Clean column names
@@ -24,13 +24,15 @@ def load_data():
         df = df.loc[:, ~df.columns.str.lower().str.startswith("unnamed")]
         df = df.loc[:, ~df.columns.str.lower().str.startswith("nan")]
         
-        # Filter out empty or invalid project rows
-        df = df.dropna(subset=["Project Name"]).copy()
-        df["Project Name"] = df["Project Name"].astype(str).str.strip()
-        df = df[~df["Project Name"].str.lower().isin(["nan", "none", "", "null"])]
+        # Filter out empty or invalid project/ticket rows based on the specific tab's primary key
+        if subset_col in df.columns:
+            df = df.dropna(subset=[subset_col]).copy()
+            df[subset_col] = df[subset_col].astype(str).str.strip()
+            df = df[~df[subset_col].str.lower().isin(["nan", "none", "", "null"])]
         
         return df
 
+    # Fetch existing tabs using standard 'Project Name'
     df_projects = fetch_sheet("Projects")
     df_ratings = fetch_sheet("Ratings")
     
@@ -40,22 +42,55 @@ def load_data():
     except Exception:
         df_defects = pd.DataFrame(columns=["Project Name"])
 
-    # Standardize release candidate estimate column name if spelled out in sheet
+    # Try fetching the new T2 tab using 'T2 Ticket'
+    try:
+        df_t2 = fetch_sheet("T2", subset_col="T2 Ticket")
+    except Exception:
+        df_t2 = pd.DataFrame(columns=["T2 Ticket", "Start Date", "Completion Date"])
+        
+    # Fetch the new T2 Ratings tab using 'T2 Ticket'
+    try:
+        df_t2_ratings = fetch_sheet("T2 Ratings", subset_col="T2 Ticket")
+    except Exception:
+        df_t2_ratings = pd.DataFrame(columns=["T2 Ticket"])
+
+    # Standardize release candidate estimate column name if spelled out in Projects
     df_projects = df_projects.rename(columns={
         "QA Estimate release candidate Dependant": "QA Estimate rc Dependant",
         "QA Estimate Release Candidate Dependant": "QA Estimate rc Dependant"
     })
 
-    # Format Dates safely
+    # Standardize release candidate estimate column name in T2 (just in case)
+    df_t2 = df_t2.rename(columns={
+        "QA Estimate release candidate Dependant": "QA Estimate rc Dependant",
+        "QA Estimate Release Candidate Dependant": "QA Estimate rc Dependant"
+    })
+
+    # Format Dates safely for Projects
     if "Start Date" in df_projects.columns:
         df_projects["Start Date"] = pd.to_datetime(df_projects["Start Date"], errors="coerce")
     if "Completion Date" in df_projects.columns:
         df_projects["Completion Date"] = pd.to_datetime(df_projects["Completion Date"], errors="coerce")
+        
+    # Format Dates safely for T2
+    if "Start Date" in df_t2.columns:
+        df_t2["Start Date"] = pd.to_datetime(df_t2["Start Date"], errors="coerce")
+    if "Completion Date" in df_t2.columns:
+        df_t2["Completion Date"] = pd.to_datetime(df_t2["Completion Date"], errors="coerce")
 
-    # Merge Release Candidates count from Ratings sheet if not in Projects
-    if "Number of Release Candidates" in df_ratings.columns and "Number of Release Candidates" not in df_projects.columns:
-        rc_data = df_ratings[["Project Name", "Number of Release Candidates"]].drop_duplicates(subset=["Project Name"])
-        df_projects = pd.merge(df_projects, rc_data, on="Project Name", how="left")
+    # Merge Release Candidates count from Ratings sheet into Projects if missing
+    if "Number of Release Candidates" in df_ratings.columns:
+        if "Project Name" in df_ratings.columns:
+            rc_data_proj = df_ratings[["Project Name", "Number of Release Candidates"]].drop_duplicates(subset=["Project Name"])
+            if "Number of Release Candidates" not in df_projects.columns:
+                df_projects = pd.merge(df_projects, rc_data_proj, on="Project Name", how="left")
+                
+    # Merge Release Candidates count from T2 Ratings sheet into T2 if missing
+    if "Number of Release Candidates" in df_t2_ratings.columns:
+        if "T2 Ticket" in df_t2_ratings.columns:
+            rc_data_t2 = df_t2_ratings[["T2 Ticket", "Number of Release Candidates"]].drop_duplicates(subset=["T2 Ticket"])
+            if "Number of Release Candidates" not in df_t2.columns:
+                df_t2 = pd.merge(df_t2, rc_data_t2, on="T2 Ticket", how="left")
 
     # Coerce numeric floating-point fields in Projects (Round to 1 decimal)
     float_cols = ["Estimated QA Days", "Actual QA Days", "QA Estimate rc Dependant"]
@@ -64,14 +99,24 @@ def load_data():
             df_projects[col] = pd.to_numeric(df_projects[col], errors="coerce").fillna(0.0).round(1)
         else:
             df_projects[col] = 0.0
+            
+        if col in df_t2.columns:
+            df_t2[col] = pd.to_numeric(df_t2[col], errors="coerce").fillna(0.0).round(1)
+        else:
+            df_t2[col] = 0.0
 
-    # Coerce integer count fields in Projects (cast to whole numbers)
+    # Coerce integer count fields (cast to whole numbers)
     int_cols = ["Number of Release Candidates", "Bugs Reported", "Bugs Resolved", "Number of Welds Tested", "Number of Tracers"]
     for col in int_cols:
         if col in df_projects.columns:
             df_projects[col] = pd.to_numeric(df_projects[col], errors="coerce").fillna(0).astype(int)
         else:
             df_projects[col] = 0
+            
+        if col in df_t2.columns:
+            df_t2[col] = pd.to_numeric(df_t2[col], errors="coerce").fillna(0).astype(int)
+        else:
+            df_t2[col] = 0
 
     # Coerce numeric fields in Defects sheet
     defect_list = [
@@ -87,10 +132,10 @@ def load_data():
         else:
             df_defects[col] = 0
 
-    return df_projects, df_ratings, df_defects
+    return df_projects, df_ratings, df_defects, df_t2, df_t2_ratings
 
 try:
-    df_projects, df_ratings, df_defects = load_data()
+    df_projects, df_ratings, df_defects, df_t2, df_t2_ratings = load_data()
 except Exception as e:
     st.error(f"Error loading dashboard data: {e}")
     st.stop()
@@ -113,12 +158,14 @@ if st.sidebar.button("🔄 Refresh Data from Sheet"):
     st.cache_data.clear()
     st.rerun()
 
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📋 Summary & QA Ratings", 
     "📈 Testing Estimation vs Actuals", 
     "🐞 Bug Tracking",
-    "🔬 Welding & Defect Metrics"
+    "🔬 Welding & Defect Metrics",
+    "⚠️ T2 Support & Ratings"
 ])
+
 
 # =============================================================================
 # TAB 1: SUMMARY & READ-ONLY RATINGS
@@ -787,3 +834,397 @@ with tab4:
                 st.info("No defect occurrences recorded in the 'Defects' sheet yet.")
         else:
             st.info("Defect tracking columns not found in the 'Defects' sheet.")
+
+
+
+# =============================================================================
+# TAB 5: RATING AND PERFORMANCE OF T2 TICKETS
+# =============================================================================
+with tab5:
+    st.title("⚠️ T2 Performance & Ratings")
+
+    time_range_t2 = st.radio(
+        "Select Time Range:",
+        options=["3 Months", "6 Months", "9 Months", "All Time"],
+        index=3,
+        horizontal=True,
+        key="tab5_time_range"
+    )
+
+    today_date = pd.Timestamp(datetime.today().date())
+
+    # Map df_t2 instead of df_projects
+    if time_range_t2 == "3 Months":
+        cutoff = today_date - pd.Timedelta(days=90)
+        df_filtered_t2 = df_t2[df_t2["Start Date"] >= cutoff]
+    elif time_range_t2 == "6 Months":
+        cutoff = today_date - pd.Timedelta(days=180)
+        df_filtered_t2 = df_t2[df_t2["Start Date"] >= cutoff]
+    elif time_range_t2 == "9 Months":
+        cutoff = today_date - pd.Timedelta(days=270)
+        df_filtered_t2 = df_t2[df_t2["Start Date"] >= cutoff]
+    else:
+        df_filtered_t2 = df_t2.copy()
+
+    st.subheader("T2 Inventory")
+    
+    # Exclude Bug metrics from Tab 5 inventory view
+    hide_columns = ["Bugs Reported", "Bugs Resolved"]
+    cols_to_exclude = [c for c in hide_columns if c in df_filtered_t2.columns]
+    df_display_t2 = df_filtered_t2.drop(columns=cols_to_exclude).copy()
+
+    def format_release_link(val):
+        val_str = str(val).strip()
+        if val_str.startswith("http://") or val_str.startswith("https://"):
+            if "#" not in val_str:
+                return f"{val_str}#Open Release Form 🔗"
+        return val_str
+
+    for col_name in ["QA T2 Release Document", "QA T2 Release Form Link", "QA Release Document"]:
+        if col_name in df_display_t2.columns:
+            df_display_t2[col_name] = df_display_t2[col_name].apply(format_release_link)
+
+    if "Tracers Used" in df_display_t2.columns and "Number of Tracers" in df_display_t2.columns:
+        def format_tracers_combined(row):
+            used = str(row["Tracers Used"]).strip()
+            count = row["Number of Tracers"]
+            if used.lower() == "yes" and count > 0:
+                return f"Yes ({count})"
+            elif used.lower() == "yes":
+                return "Yes"
+            return "No"
+            
+        df_display_t2["Tracers"] = df_display_t2.apply(format_tracers_combined, axis=1)
+
+    link_col_names = ["QA T2 Release Document", "QA T2 Release Form Link", "QA Release Document"]
+    target_link_col = next((c for c in link_col_names if c in df_display_t2.columns), None)
+    tracer_cols_to_move = [c for c in ["Plate or Pipe Coupons", "Tracers"] if c in df_display_t2.columns]
+
+    if target_link_col and tracer_cols_to_move:
+        remaining_cols = [c for c in df_display_t2.columns if c not in tracer_cols_to_move]
+        if target_link_col in remaining_cols:
+            idx = remaining_cols.index(target_link_col)
+            ordered_cols = remaining_cols[:idx] + tracer_cols_to_move + remaining_cols[idx:]
+            df_display_t2 = df_display_t2[ordered_cols]
+
+    column_configuration_t2 = {
+        "T2 Ticket": st.column_config.TextColumn("T2 Ticket"),
+        "Start Date": st.column_config.DateColumn("Start Date", format="YYYY-MM-DD"),
+        "Completion Date": st.column_config.DateColumn("Completion Date", format="YYYY-MM-DD"),
+        "Plate or Pipe Coupons": st.column_config.TextColumn("Plate or Pipe Coupons"),
+        "Tracers": st.column_config.TextColumn("Tracers (Used & Count)"),
+        "Welding Inspection Required": st.column_config.TextColumn("Welding Req?"),
+        "Number of Welds Tested": st.column_config.NumberColumn("Number of Welds Tested", format="%d"),
+        "Number of Release Candidates": st.column_config.NumberColumn("Number of Release Candidates", format="%d"),
+        "Estimated QA Days": st.column_config.NumberColumn("Estimated QA Days", format="%.1f"),
+        "Actual QA Days": st.column_config.NumberColumn("Actual QA Days", format="%.1f"),
+        "QA Estimate rc Dependant": st.column_config.NumberColumn("QA Estimate rc Dependant", format="%.1f"),
+        "QA T2 Release Document": st.column_config.LinkColumn(
+            "QA T2 Release Document",
+            display_text=r"#(.*)$"
+        ),
+        "QA Release Document": st.column_config.LinkColumn(
+            "QA Release Document",
+            display_text=r"#(.*)$"
+        )
+    }
+
+    if "QA T2 Release Form Link" in df_display_t2.columns:
+        column_configuration_t2["QA T2 Release Form Link"] = st.column_config.LinkColumn(
+            "QA T2 Release Form Link",
+            display_text=r"#(.*)$"
+        )
+
+    def highlight_status(val):
+        if str(val).strip().lower() == "completed":
+            return "background-color: #2e7d32; color: #ffffff; font-weight: bold;"
+        return ""
+
+    def highlight_welding(val):
+        if str(val).strip().lower() == "yes":
+            return "background-color: #e65100; color: #ffffff; font-weight: bold;"
+        return ""
+
+    styler_t2 = df_display_t2.style
+    map_func_t2 = getattr(styler_t2, "map", None) or getattr(styler_t2, "applymap", None)
+
+    if map_func_t2:
+        if "Status" in df_display_t2.columns:
+            styler_t2 = map_func_t2(highlight_status, subset=["Status"])
+        if "Welding Inspection Required" in df_display_t2.columns:
+            styler_t2 = map_func_t2(highlight_welding, subset=["Welding Inspection Required"])
+
+    st.dataframe(
+        styler_t2,
+        column_config=column_configuration_t2,
+        width="stretch",
+        hide_index=True
+    )
+
+    st.divider()
+    st.subheader("⭐ QA Rating & Readiness Benchmarks")
+    
+    t2_project_list = df_t2["T2 Ticket"].tolist()
+    
+    if t2_project_list:
+        selected_project_t2 = st.selectbox("Select Project to Inspect Ratings:", t2_project_list, key="tab5_proj_select")
+        
+        # CHANGED: Now pulling explicitly from df_t2_ratings instead of df_ratings
+        project_rating_row_t2 = df_t2_ratings[df_t2_ratings["T2 Ticket"] == selected_project_t2]
+        project_main_row_t2 = df_t2[df_t2["T2 Ticket"] == selected_project_t2]
+
+        categories = [
+            "Software Documentation Provided", 
+            "Product Documentation Provided", 
+            "Robot Availability", 
+            "Bundle Preparation", 
+            "Software Support",
+            "Controls Support",
+            "Product Support",
+            "Welding Team Performance",
+            "Stress on QA Resources",
+            "QA Self-Reported Performance"
+        ]
+
+        valid_scores_t2 = []
+        radar_r_t2 = []
+
+        if not project_rating_row_t2.empty:
+            p_data_t2 = project_rating_row_t2.iloc[0]
+            for cat in categories:
+                val = p_data_t2.get(cat, None)
+                try:
+                    num_val = float(val)
+                    if pd.notnull(num_val):
+                        valid_scores_t2.append(num_val)
+                        radar_r_t2.append(num_val)
+                    else:
+                        radar_r_t2.append(None)
+                except (ValueError, TypeError):
+                    radar_r_t2.append(None)
+            
+            proj_overall_avg_t2 = (sum(valid_scores_t2) / len(valid_scores_t2)) if valid_scores_t2 else 0.0
+        else:
+            proj_overall_avg_t2 = 0.0
+
+        if proj_overall_avg_t2 > 8.8:
+            radar_line_color_t2 = "#2e7d32" 
+            radar_fill_color_t2 = "rgba(46, 125, 50, 0.35)"
+        elif proj_overall_avg_t2 >= 7.2:
+            radar_line_color_t2 = "#ffb300"
+            radar_fill_color_t2 = "rgba(255, 179, 0, 0.35)"
+        else:
+            radar_line_color_t2 = "#d32f2f"
+            radar_fill_color_t2 = "rgba(211, 47, 47, 0.35)"
+
+        col_proj_metrics_t2, col_proj_chart_t2 = st.columns([1, 1])
+
+        with col_proj_metrics_t2:
+            st.markdown(f"#### Recorded Scores for **{selected_project_t2}**")
+            
+            if not project_rating_row_t2.empty:
+                p_data_t2 = project_rating_row_t2.iloc[0]
+                
+                m1, m2 = st.columns(2)
+                m1.metric("Software Docs Provided", fmt_rating(p_data_t2.get('Software Documentation Provided')))
+                m2.metric("Product Docs Provided", fmt_rating(p_data_t2.get('Product Documentation Provided')))
+                
+                m3, m4 = st.columns(2)
+                m3.metric("Robot Availability", fmt_rating(p_data_t2.get('Robot Availability')))
+                m4.metric("Bundle Preparation", fmt_rating(p_data_t2.get('Bundle Preparation')))
+                
+                m5, m6 = st.columns(2)
+                m5.metric("Software Support", fmt_rating(p_data_t2.get('Software Support')))
+                m6.metric("Controls Support", fmt_rating(p_data_t2.get('Controls Support')))
+
+                m7, m8 = st.columns(2)
+                m7.metric("Product Support", fmt_rating(p_data_t2.get('Product Support')))
+                m8.metric("Welding Team Perf", fmt_rating(p_data_t2.get('Welding Team Performance')))
+
+                m9, m10 = st.columns(2)
+                m9.metric("Stress on QA Resources", fmt_rating(p_data_t2.get('Stress on QA Resources')))
+                m10.metric("QA Self-Reported Perf", fmt_rating(p_data_t2.get('QA Self-Reported Performance')))
+
+                m11, m12 = st.columns(2)
+                m11.metric("Release Candidates", f"{int(p_data_t2.get('Number of Release Candidates', 0))}")
+                m12.metric("Targeted Test Plan", f"{p_data_t2.get('Targeted Test Plan', 'N/A')}")
+
+                st.metric("Overall Average Rating", f"{proj_overall_avg_t2:.1f} / 10" if valid_scores_t2 else "N/A")
+
+                release_url_t2 = None
+                if not project_main_row_t2.empty:
+                    for link_col in ["QA T2 Release Document", "QA T2 Release Form Link", "QA Release Document"]:
+                        if link_col in project_main_row_t2.columns:
+                            val = str(project_main_row_t2.iloc[0][link_col]).strip()
+                            if val.startswith("http://") or val.startswith("https://"):
+                                release_url_t2 = val
+                                break
+
+                if release_url_t2:
+                    st.link_button("📄 Open QA T2 Release Form", release_url_t2, width="stretch")
+            else:
+                st.warning("No rating record found in the T2 Ratings sheet for this project.")
+
+        with col_proj_chart_t2:
+            st.markdown(f"#### {selected_project_t2} Performance Radar")
+            if not project_rating_row_t2.empty:
+                r_closed_t2 = radar_r_t2 + [radar_r_t2[0] if radar_r_t2 else None]
+                theta_closed_t2 = categories + [categories[0]]
+
+                fig_radar_t2 = go.Figure(go.Scatterpolar(
+                    r=r_closed_t2,
+                    theta=theta_closed_t2,
+                    fill='toself',
+                    connectgaps=True,
+                    name=selected_project_t2,
+                    line_color=radar_line_color_t2,
+                    fillcolor=radar_fill_color_t2
+                ))
+
+                fig_radar_t2.update_layout(
+                    polar=dict(
+                        bgcolor="white",
+                        radialaxis=dict(
+                            visible=True,
+                            range=[0, 10],
+                            tickfont=dict(color="black", size=10),
+                            gridcolor="#d3d3d3"
+                        ),
+                        angularaxis=dict(
+                            tickfont=dict(color="white", size=10),
+                            gridcolor="#444444"
+                        )
+                    ),
+                    paper_bgcolor="rgba(0, 0, 0, 0)",
+                    plot_bgcolor="rgba(0, 0, 0, 0)",
+                    showlegend=False,
+                    margin=dict(l=40, r=40, t=30, b=30)
+                )
+
+                st.plotly_chart(fig_radar_t2, width="stretch")
+            else:
+                st.info("No rating data available for this project.")
+
+        st.divider()
+
+        # --- ROW 2: DYNAMIC PORTFOLIO AVERAGE METRICS & RADAR CHART ---
+        avg_time_range_t2 = st.selectbox(
+            "Select Portfolio Benchmark Timeframe:",
+            options=["30 Days", "3 Months", "6 Months", "1 Year"],
+            index=3,
+            key="tab5_bench_time"
+        )
+
+        if avg_time_range_t2 == "30 Days":
+            avg_cutoff_t2 = today_date - pd.Timedelta(days=30)
+        elif avg_time_range_t2 == "3 Months":
+            avg_cutoff_t2 = today_date - pd.Timedelta(days=90)
+        elif avg_time_range_t2 == "6 Months":
+            avg_cutoff_t2 = today_date - pd.Timedelta(days=180)
+        else:
+            avg_cutoff_t2 = today_date - pd.Timedelta(days=365)
+
+        recent_t2_project_names = df_t2[df_t2["Start Date"] >= avg_cutoff_t2]["T2 Ticket"].tolist()
+        
+        # CHANGED: Now pulling explicitly from df_t2_ratings instead of df_ratings
+        df_ratings_avg_t2 = df_t2_ratings[df_t2_ratings["T2 Ticket"].isin(recent_t2_project_names)]
+
+        no_recent_data_t2 = False
+        if df_ratings_avg_t2.empty:
+            df_ratings_avg_t2 = df_t2_ratings[df_t2_ratings["T2 Ticket"].isin(t2_project_list)].copy()
+            no_recent_data_t2 = True
+
+        col_avg_metrics_t2, col_avg_chart_t2 = st.columns([1, 1])
+
+        with col_avg_metrics_t2:
+            st.markdown(f"#### Past {avg_time_range_t2} T2 Average Scores")
+            if no_recent_data_t2:
+                st.caption(f"ℹ️ No projects found within the last {avg_time_range_t2}. Displaying overall T2 averages.")
+
+            def safe_mean_t2(col_name):
+                if col_name in df_ratings_avg_t2.columns:
+                    m = pd.to_numeric(df_ratings_avg_t2[col_name], errors="coerce").mean()
+                    return f"{m:.1f} / 10" if pd.notnull(m) else "N/A"
+                return "N/A"
+
+            a1, a2 = st.columns(2)
+            a1.metric("Avg Software Docs", safe_mean_t2('Software Documentation Provided'))
+            a2.metric("Avg Product Docs", safe_mean_t2('Product Documentation Provided'))
+
+            a3, a4 = st.columns(2)
+            a3.metric("Avg Robot Availability", safe_mean_t2('Robot Availability'))
+            a4.metric("Avg Bundle Preparation", safe_mean_t2('Bundle Preparation'))
+
+            a5, a6 = st.columns(2)
+            a5.metric("Avg Software Support", safe_mean_t2('Software Support'))
+            a6.metric("Avg Controls Support", safe_mean_t2('Controls Support'))
+
+            a7, a8 = st.columns(2)
+            a7.metric("Avg Product Support", safe_mean_t2('Product Support'))
+            a8.metric("Avg Welding Team Perf", safe_mean_t2('Welding Team Performance'))
+
+            a9, a10 = st.columns(2)
+            a9.metric("Avg Stress on QA", safe_mean_t2('Stress on QA Resources'))
+            a10.metric("Avg QA Self-Reported Perf", safe_mean_t2('QA Self-Reported Performance'))
+
+            if "Number of Release Candidates" in df_ratings_avg_t2.columns:
+                rc_m_t2 = pd.to_numeric(df_ratings_avg_t2["Number of Release Candidates"], errors="coerce").mean()
+                st.metric("Avg Release Candidates", f"{rc_m_t2:.1f}" if pd.notnull(rc_m_t2) else "N/A")
+
+            cat_means_t2 = []
+            for cat in categories:
+                if cat in df_ratings_avg_t2.columns:
+                    m = pd.to_numeric(df_ratings_avg_t2[cat], errors="coerce").mean()
+                    if pd.notnull(m):
+                        cat_means_t2.append(float(m))
+            
+            portfolio_overall_avg_t2 = (sum(cat_means_t2) / len(cat_means_t2)) if cat_means_t2 else 0.0
+            st.metric("Overall T2 Average Rating", f"{portfolio_overall_avg_t2:.1f} / 10" if cat_means_t2 else "N/A")
+
+        with col_avg_chart_t2:
+            st.markdown(f"#### Past {avg_time_range_t2} T2 Performance Radar")
+            
+            avg_scores_t2 = []
+            for cat in categories:
+                if cat in df_ratings_avg_t2.columns:
+                    mean_val = pd.to_numeric(df_ratings_avg_t2[cat], errors="coerce").mean()
+                    avg_scores_t2.append(float(mean_val) if pd.notnull(mean_val) else None)
+                else:
+                    avg_scores_t2.append(None)
+
+            avg_r_closed_t2 = avg_scores_t2 + [avg_scores_t2[0] if avg_scores_t2 else None]
+            avg_theta_closed_t2 = categories + [categories[0]]
+
+            fig_avg_radar_t2 = go.Figure(go.Scatterpolar(
+                r=avg_r_closed_t2,
+                theta=avg_theta_closed_t2,
+                fill='toself',
+                connectgaps=True,
+                name=f"{avg_time_range_t2} Average",
+                line_color='#ff9800',
+                fillcolor='rgba(255, 152, 0, 0.35)'
+            ))
+
+            fig_avg_radar_t2.update_layout(
+                polar=dict(
+                    bgcolor="white",
+                    radialaxis=dict(
+                        visible=True,
+                        range=[0, 10],
+                        tickfont=dict(color="black", size=10),
+                        gridcolor="#d3d3d3"
+                    ),
+                    angularaxis=dict(
+                        tickfont=dict(color="white", size=10),
+                        gridcolor="#444444"
+                    )
+                ),
+                paper_bgcolor="rgba(0, 0, 0, 0)",
+                plot_bgcolor="rgba(0, 0, 0, 0)",
+                showlegend=False,
+                margin=dict(l=40, r=40, t=30, b=30)
+            )
+
+            st.plotly_chart(fig_avg_radar_t2, width="stretch")
+    else:
+        st.info("No T2 data available yet in the spreadsheet.")
