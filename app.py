@@ -1191,7 +1191,7 @@ with tab5:
 
 
 # =============================================================================
-# TAB 6: QA BANDWIDTH GAUGE
+# TAB 6: QA BANDWIDTH GAUGE (SPEEDOMETER STYLE)
 # =============================================================================
 with tab6:
     st.title("🚦 QA Bandwidth")
@@ -1199,67 +1199,167 @@ with tab6:
 
     # 1. Calculate Open Projects
     if "Status" in df_projects.columns:
-        # Filter projects that are NOT 'Completed'
         open_projects_df = df_projects[df_projects["Status"].str.strip().str.lower() != "completed"]
         open_projects_count = len(open_projects_df)
     else:
-        # Fallback if Status column doesn't exist
         st.warning("⚠️ 'Status' column not found in Projects sheet. Counting all projects as open.")
         open_projects_count = len(df_projects)
         open_projects_df = df_projects
 
-    # 2. Dynamic Critical Warning Banner
+    # 2. Dynamic Warning Banners
     if open_projects_count >= 8:
         st.error("🚨 **CRITICAL BANDWIDTH WARNING:** The QA team currently has 8 or more active projects. Resources are severely stretched.")
-    elif open_projects_count >= 6:
-        st.warning("⚠️ **HIGH BANDWIDTH:** The QA team has 6 or more active projects. Approaching capacity.")
+    elif open_projects_count >= 5:
+        st.warning("⚠️ **HIGH BANDWIDTH:** The QA team has 5 or more active projects. Approaching capacity.")
 
-    # Calculate gauge maximum dynamically so the dial never overflows
+    # 3. Mathematical Geometry Setup
+    import numpy as np
+
     gauge_max = max(10, open_projects_count + 2)
+    val_clamped = min(open_projects_count, gauge_max)
 
-    # 3. Build the Gauge Chart
-    fig_gauge = go.Figure(go.Indicator(
-        mode="gauge+number",
-        value=open_projects_count,
-        domain={'x': [0, 1], 'y': [0, 1]},
-        title={'text': "Active Projects in Queue", 'font': {'size': 24}},
-        gauge={
-            'axis': {
-                'range': [0, gauge_max], 
-                'tickwidth': 1, 
-                'tickcolor': "rgba(128,128,128,0.5)",
-                'tickmode': 'linear',
-                'dtick': 1 # Show a tick for every integer
-            },
-            'bar': {'color': "rgba(0,0,0,0.6)"}, # Darker indicator bar for contrast
-            'bgcolor': "white",
-            'borderwidth': 2,
-            'bordercolor': "rgba(128,128,128,0.2)",
-            'steps': [
-                {'range': [0, 3], 'color': "rgba(76, 175, 80, 0.5)"},    # Green (Healthy): 0-4
-                {'range': [3, 5], 'color': "rgba(255, 152, 0, 0.6)"},    # Orange (Warning): 4-6
-                {'range': [5, 8], 'color': "rgba(244, 67, 54, 0.6)"},    # Red (High): 6-8
-                {'range': [8, gauge_max], 'color': "rgba(139, 0, 0, 0.85)"} # Dark Crimson (Critical): 8+
-            ],
-            'threshold': {
-                'line': {'color': "black", 'width': 4},
-                'thickness': 0.75,
-                'value': open_projects_count
-            }
-        }
+    fig_gauge = go.Figure()
+
+    # Gauge radii
+    r_outer = 1.0
+    r_inner = 0.65
+    r_needle = 0.90  # Extends ~3/4 into the colored band
+
+    # Helper function to generate smooth arc polygons
+    def create_arc_polygon(v_start, v_end, max_v, r_in, r_out, steps=40):
+        # 0 is on the left (pi), max_v is on the right (0)
+        t_start = np.pi - (v_start / max_v) * np.pi
+        t_end = np.pi - (v_end / max_v) * np.pi
+        angles = np.linspace(t_start, t_end, steps)
+        
+        x_out = r_out * np.cos(angles)
+        y_out = r_out * np.sin(angles)
+        x_in = r_in * np.cos(angles[::-1])
+        y_in = r_in * np.sin(angles[::-1])
+        
+        return np.concatenate([x_out, x_in, [x_out[0]]]), np.concatenate([y_out, y_in, [y_out[0]]])
+
+    # 4. Draw Colored Bands (Exact Same Coordinates as the Needle)
+    zones = [
+        (0, 3, "rgba(76, 175, 80, 0.65)"),         # Green: 0-3
+        (3, 5, "rgba(255, 152, 0, 0.70)"),        # Orange: 3-5
+        (5, 8, "rgba(244, 67, 54, 0.70)"),        # Red: 5-8
+        (8, gauge_max, "rgba(139, 0, 0, 0.85)")   # Dark Crimson: 8+
+    ]
+
+    for z_start, z_end, z_color in zones:
+        if z_start < gauge_max:
+            actual_end = min(z_end, gauge_max)
+            x_band, y_band = create_arc_polygon(z_start, actual_end, gauge_max, r_inner, r_outer)
+            fig_gauge.add_trace(go.Scatter(
+                x=x_band,
+                y=y_band,
+                fill="toself",
+                fillcolor=z_color,
+                line=dict(color="rgba(0,0,0,0.15)", width=1),
+                hoverinfo="none",
+                showlegend=False,
+                mode="lines"
+            ))
+
+    # 5. Draw Ticks & Numeric Labels
+    tick_x, tick_y = [], []
+    for i in range(gauge_max + 1):
+        th = np.pi - (i / gauge_max) * np.pi
+        # Minor tick line extending beyond outer arc
+        x0, y0 = r_outer * np.cos(th), r_outer * np.sin(th)
+        x1, y1 = (r_outer + 0.04) * np.cos(th), (r_outer + 0.04) * np.sin(th)
+        
+        fig_gauge.add_trace(go.Scatter(
+            x=[x0, x1], y=[y0, y1],
+            mode="lines",
+            line=dict(color="rgba(160, 160, 160, 0.7)", width=1.5),
+            hoverinfo="none",
+            showlegend=False
+        ))
+        
+        # Numeric tick label
+        label_r = r_outer + 0.12
+        fig_gauge.add_annotation(
+            x=label_r * np.cos(th),
+            y=label_r * np.sin(th),
+            text=str(i),
+            showarrow=False,
+            font=dict(size=13, color="#AAAAAA", family="Arial")
+        )
+
+    # 6. Draw Triangular Needle
+    # Angle of current workload value
+    theta_needle = np.pi - (val_clamped / gauge_max) * np.pi
+
+    # Needle tip (points with 100% mathematical precision)
+    tip_x = r_needle * np.cos(theta_needle)
+    tip_y = r_needle * np.sin(theta_needle)
+
+    # Needle base width (tapering from hub)
+    w_base = 0.035
+    b1_x = w_base * np.cos(theta_needle - np.pi / 2)
+    b1_y = w_base * np.sin(theta_needle - np.pi / 2)
+    b2_x = w_base * np.cos(theta_needle + np.pi / 2)
+    b2_y = w_base * np.sin(theta_needle + np.pi / 2)
+
+    fig_gauge.add_trace(go.Scatter(
+        x=[b1_x, tip_x, b2_x, b1_x],
+        y=[b1_y, tip_y, b2_y, b1_y],
+        fill="toself",
+        fillcolor="#D32F2F",
+        line=dict(color="#B71C1C", width=1),
+        hoverinfo="none",
+        showlegend=False,
+        mode="lines"
     ))
 
-    # Apply transparent layout for dark/light mode compatibility
+    # 7. Draw Pivot Hub Circle at (0, 0)
+    hub_angles = np.linspace(0, 2 * np.pi, 30)
+    hub_r = 0.065
+    fig_gauge.add_trace(go.Scatter(
+        x=hub_r * np.cos(hub_angles),
+        y=hub_r * np.sin(hub_angles),
+        fill="toself",
+        fillcolor="#1E1E1E",
+        line=dict(color="#333333", width=2),
+        hoverinfo="none",
+        showlegend=False,
+        mode="lines"
+    ))
+
+    # 8. Add Headroom Title and Digital Odometer Readout
+    fig_gauge.add_annotation(
+        x=0, y=1.28,
+        text="<b>Active Projects in Queue</b>",
+        showarrow=False,
+        font=dict(size=20, color="#FAFAFA", family="Arial")
+    )
+
+    fig_gauge.add_annotation(
+        x=0, y=-0.22,
+        text=f"<span style='font-size:26px; font-weight:800; color:#FFFFFF;'>{open_projects_count}</span> <span style='font-size:13px; color:#AAAAAA; font-weight:600;'>ACTIVE</span>",
+        showarrow=False,
+        bgcolor="#15171C",
+        bordercolor="#3E424B",
+        borderwidth=1.5,
+        borderpad=7,
+        align="center"
+    )
+
+    # 9. Lock Aspect Ratio 1:1 and Remove Coordinate Axes
+    fig_gauge.update_xaxes(range=[-1.25, 1.25], visible=False, scaleanchor="y", scaleratio=1)
+    fig_gauge.update_yaxes(range=[-0.45, 1.40], visible=False)
+
     fig_gauge.update_layout(
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        font={'color': "gray", 'family': "Arial"},
         height=450,
-        margin=dict(l=20, r=20, t=50, b=20)
+        margin=dict(l=20, r=20, t=10, b=10)
     )
 
-    # 4. Render Gauge and Active Project List
-    col_gauge, col_list = st.columns([1.5, 1])
+    # 10. Render Layout
+    col_gauge, col_list = st.columns([1.4, 1])
 
     with col_gauge:
         st.plotly_chart(fig_gauge, use_container_width=True)
@@ -1268,9 +1368,10 @@ with tab6:
         st.subheader(f"Current Workload ({open_projects_count})")
         if open_projects_count > 0:
             for idx, row in open_projects_df.iterrows():
-                # Make the text red if we are in the critical zone to emphasize the list
                 if open_projects_count >= 8:
                     st.markdown(f"- :red[**{row.get('Project Name', 'Unnamed')}**]")
+                elif open_projects_count >= 5:
+                    st.markdown(f"- :orange[**{row.get('Project Name', 'Unnamed')}**]")
                 else:
                     st.markdown(f"- **{row.get('Project Name', 'Unnamed')}**")
         else:
