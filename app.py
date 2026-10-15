@@ -158,12 +158,13 @@ if st.sidebar.button("🔄 Refresh Data from Sheet"):
     st.cache_data.clear()
     st.rerun()
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📋 Summary & QA Ratings", 
     "📈 Testing Estimation vs Actuals", 
     "🐞 Bug Tracking",
     "🔬 Welding & Defect Metrics",
-    "⚠️ T2 Support & Ratings"
+    "⚠️ T2 Support & Ratings",
+    "🚦 QA Bandwidth"
 ])
 
 # =============================================================================
@@ -1187,3 +1188,90 @@ with tab5:
 
     else:
         st.info("No T2 data available yet in the spreadsheet.")
+
+
+# =============================================================================
+# TAB 6: QA BANDWIDTH GAUGE
+# =============================================================================
+with tab6:
+    st.title("🚦 QA Bandwidth")
+    st.caption("Active project load across the QA team.")
+
+    # 1. Calculate Open Projects
+    if "Status" in df_projects.columns:
+        # Filter projects that are NOT 'Completed'
+        open_projects_df = df_projects[df_projects["Status"].str.strip().str.lower() != "completed"]
+        open_projects_count = len(open_projects_df)
+    else:
+        # Fallback if Status column doesn't exist
+        st.warning("⚠️ 'Status' column not found in Projects sheet. Counting all projects as open.")
+        open_projects_count = len(df_projects)
+        open_projects_df = df_projects
+
+    # 2. Dynamic Critical Warning Banner
+    if open_projects_count >= 8:
+        st.error("🚨 **CRITICAL BANDWIDTH WARNING:** The QA team currently has 8 or more active projects. Resources are severely stretched.")
+    elif open_projects_count >= 6:
+        st.warning("⚠️ **HIGH BANDWIDTH:** The QA team has 6 or more active projects. Approaching capacity.")
+
+    # Calculate gauge maximum dynamically so the dial never overflows
+    gauge_max = max(10, open_projects_count + 2)
+
+    # 3. Build the Gauge Chart
+    fig_gauge = go.Figure(go.Indicator(
+        mode="gauge+number",
+        value=open_projects_count,
+        domain={'x': [0, 1], 'y': [0, 1]},
+        title={'text': "Active Projects in Queue", 'font': {'size': 24}},
+        gauge={
+            'axis': {
+                'range': [0, gauge_max], 
+                'tickwidth': 1, 
+                'tickcolor': "rgba(128,128,128,0.5)",
+                'tickmode': 'linear',
+                'dtick': 1 # Show a tick for every integer
+            },
+            'bar': {'color': "rgba(0,0,0,0.6)"}, # Darker indicator bar for contrast
+            'bgcolor': "white",
+            'borderwidth': 2,
+            'bordercolor': "rgba(128,128,128,0.2)",
+            'steps': [
+                {'range': [0, 3], 'color': "rgba(76, 175, 80, 0.5)"},    # Green (Healthy): 0-4
+                {'range': [3, 5], 'color': "rgba(255, 152, 0, 0.6)"},    # Orange (Warning): 4-6
+                {'range': [5, 8], 'color': "rgba(244, 67, 54, 0.6)"},    # Red (High): 6-8
+                {'range': [8, gauge_max], 'color': "rgba(139, 0, 0, 0.85)"} # Dark Crimson (Critical): 8+
+            ],
+            'threshold': {
+                'line': {'color': "black", 'width': 4},
+                'thickness': 0.75,
+                'value': open_projects_count
+            }
+        }
+    ))
+
+    # Apply transparent layout for dark/light mode compatibility
+    fig_gauge.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font={'color': "gray", 'family': "Arial"},
+        height=450,
+        margin=dict(l=20, r=20, t=50, b=20)
+    )
+
+    # 4. Render Gauge and Active Project List
+    col_gauge, col_list = st.columns([1.5, 1])
+
+    with col_gauge:
+        st.plotly_chart(fig_gauge, use_container_width=True)
+
+    with col_list:
+        st.subheader(f"Current Workload ({open_projects_count})")
+        if open_projects_count > 0:
+            for idx, row in open_projects_df.iterrows():
+                # Make the text red if we are in the critical zone to emphasize the list
+                if open_projects_count >= 8:
+                    st.markdown(f"- :red[**{row.get('Project Name', 'Unnamed')}**]")
+                else:
+                    st.markdown(f"- **{row.get('Project Name', 'Unnamed')}**")
+        else:
+            st.success("🎉 No active projects. Queue is empty!")
