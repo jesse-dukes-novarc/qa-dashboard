@@ -1191,43 +1191,41 @@ with tab5:
 
 
 # =============================================================================
-# TAB 6: QA BANDWIDTH GAUGE (SPEEDOMETER STYLE)
+# TAB 6: QA BANDWIDTH GAUGE (IN PROGRESS WORKLOAD)
 # =============================================================================
 with tab6:
     st.title("🚦 QA Bandwidth")
-    st.caption("Active project load across the QA team.")
+    st.caption("Active project load across the QA team based strictly on 'In Progress' status.")
 
-    # 1. Calculate Open Projects
+    # 1. Filter Specifically for 'In Progress' Projects
     if "Status" in df_projects.columns:
-        open_projects_df = df_projects[df_projects["Status"].str.strip().str.lower() != "completed"]
-        open_projects_count = len(open_projects_df)
+        in_progress_df = df_projects[df_projects["Status"].astype(str).str.strip().str.lower() == "in progress"]
+        in_progress_count = len(in_progress_df)
     else:
-        st.warning("⚠️ 'Status' column not found in Projects sheet. Counting all projects as open.")
-        open_projects_count = len(df_projects)
-        open_projects_df = df_projects
+        st.warning("⚠️ 'Status' column not found in Projects sheet. Defaulting count to 0.")
+        in_progress_count = 0
+        in_progress_df = pd.DataFrame()
 
-    # 2. Dynamic Warning Banners
-    if open_projects_count >= 8:
-        st.error("🚨 **CRITICAL BANDWIDTH WARNING:** The QA team currently has 8 or more active projects. Resources are severely stretched.")
-    elif open_projects_count >= 5:
-        st.warning("⚠️ **HIGH BANDWIDTH:** The QA team has 5 or more active projects. Approaching capacity.")
+    # 2. Dynamic Warning Banners (Green: 0-2, Orange: 3-4, Red: 5+)
+    if in_progress_count >= 5:
+        st.error(f"🚨 **HIGH BANDWIDTH WARNING:** The QA team currently has {in_progress_count} projects 'In Progress'. Approaching maximum capacity.")
+    elif in_progress_count >= 3:
+        st.warning(f"⚠️ **MODERATE BANDWIDTH:** The QA team currently has {in_progress_count} projects 'In Progress'.")
+
+    # Scale max to 7 (or in_progress_count if it exceeds 7)
+    gauge_max = max(7, in_progress_count)
+    val_clamped = min(in_progress_count, gauge_max)
 
     # 3. Mathematical Geometry Setup
     import numpy as np
 
-    gauge_max = max(10, open_projects_count + 2)
-    val_clamped = min(open_projects_count, gauge_max)
-
     fig_gauge = go.Figure()
 
-    # Gauge radii
     r_outer = 1.0
     r_inner = 0.65
-    r_needle = 0.90  # Extends ~3/4 into the colored band
+    r_needle = 0.90
 
-    # Helper function to generate smooth arc polygons
     def create_arc_polygon(v_start, v_end, max_v, r_in, r_out, steps=40):
-        # 0 is on the left (pi), max_v is on the right (0)
         t_start = np.pi - (v_start / max_v) * np.pi
         t_end = np.pi - (v_end / max_v) * np.pi
         angles = np.linspace(t_start, t_end, steps)
@@ -1239,12 +1237,11 @@ with tab6:
         
         return np.concatenate([x_out, x_in, [x_out[0]]]), np.concatenate([y_out, y_in, [y_out[0]]])
 
-    # 4. Draw Colored Bands (Exact Same Coordinates as the Needle)
+    # 4. Proportional 3-Color Zones (0-3 Green, 3-5 Orange, 5-7 Red)
     zones = [
         (0, 3, "rgba(76, 175, 80, 0.65)"),         # Green: 0-3
         (3, 5, "rgba(255, 152, 0, 0.70)"),        # Orange: 3-5
-        (5, 8, "rgba(244, 67, 54, 0.70)"),        # Red: 5-8
-        (8, gauge_max, "rgba(139, 0, 0, 0.85)")   # Dark Crimson: 8+
+        (5, gauge_max, "rgba(244, 67, 54, 0.75)") # Red: 5-7
     ]
 
     for z_start, z_end, z_color in zones:
@@ -1262,11 +1259,9 @@ with tab6:
                 mode="lines"
             ))
 
-    # 5. Draw Ticks & Numeric Labels
-    tick_x, tick_y = [], []
+    # 5. Draw Ticks & Numeric Labels (0 to 7)
     for i in range(gauge_max + 1):
         th = np.pi - (i / gauge_max) * np.pi
-        # Minor tick line extending beyond outer arc
         x0, y0 = r_outer * np.cos(th), r_outer * np.sin(th)
         x1, y1 = (r_outer + 0.04) * np.cos(th), (r_outer + 0.04) * np.sin(th)
         
@@ -1278,25 +1273,21 @@ with tab6:
             showlegend=False
         ))
         
-        # Numeric tick label
         label_r = r_outer + 0.12
         fig_gauge.add_annotation(
             x=label_r * np.cos(th),
             y=label_r * np.sin(th),
             text=str(i),
             showarrow=False,
-            font=dict(size=13, color="#AAAAAA", family="Arial")
+            font=dict(size=14, color="#AAAAAA", family="Arial")
         )
 
     # 6. Draw Triangular Needle
-    # Angle of current workload value
     theta_needle = np.pi - (val_clamped / gauge_max) * np.pi
 
-    # Needle tip (points with 100% mathematical precision)
     tip_x = r_needle * np.cos(theta_needle)
     tip_y = r_needle * np.sin(theta_needle)
 
-    # Needle base width (tapering from hub)
     w_base = 0.035
     b1_x = w_base * np.cos(theta_needle - np.pi / 2)
     b1_y = w_base * np.sin(theta_needle - np.pi / 2)
@@ -1328,17 +1319,17 @@ with tab6:
         mode="lines"
     ))
 
-    # 8. Add Headroom Title and Digital Odometer Readout
+    # 8. Titles and Digital Readout
     fig_gauge.add_annotation(
         x=0, y=1.28,
-        text="<b>Active Projects in Queue</b>",
+        text="<b>Projects In Progress</b>",
         showarrow=False,
         font=dict(size=20, color="#FAFAFA", family="Arial")
     )
 
     fig_gauge.add_annotation(
         x=0, y=-0.22,
-        text=f"<span style='font-size:26px; font-weight:800; color:#FFFFFF;'>{open_projects_count}</span> <span style='font-size:13px; color:#AAAAAA; font-weight:600;'>ACTIVE</span>",
+        text=f"<span style='font-size:26px; font-weight:800; color:#FFFFFF;'>{in_progress_count}</span> <span style='font-size:12px; color:#AAAAAA; font-weight:600;'>IN PROGRESS</span>",
         showarrow=False,
         bgcolor="#15171C",
         bordercolor="#3E424B",
@@ -1347,7 +1338,7 @@ with tab6:
         align="center"
     )
 
-    # 9. Lock Aspect Ratio 1:1 and Remove Coordinate Axes
+    # 9. Lock 1:1 Aspect Ratio
     fig_gauge.update_xaxes(range=[-1.25, 1.25], visible=False, scaleanchor="y", scaleratio=1)
     fig_gauge.update_yaxes(range=[-0.45, 1.40], visible=False)
 
@@ -1358,21 +1349,43 @@ with tab6:
         margin=dict(l=20, r=20, t=10, b=10)
     )
 
-    # 10. Render Layout
-    col_gauge, col_list = st.columns([1.4, 1])
+    # 10. Render Layout (Dial Gauge + Full Categorized Status Inventory)
+    col_gauge, col_list = st.columns([1.3, 1])
 
     with col_gauge:
         st.plotly_chart(fig_gauge, use_container_width=True)
 
     with col_list:
-        st.subheader(f"Current Workload ({open_projects_count})")
-        if open_projects_count > 0:
-            for idx, row in open_projects_df.iterrows():
-                if open_projects_count >= 8:
-                    st.markdown(f"- :red[**{row.get('Project Name', 'Unnamed')}**]")
-                elif open_projects_count >= 5:
-                    st.markdown(f"- :orange[**{row.get('Project Name', 'Unnamed')}**]")
-                else:
-                    st.markdown(f"- **{row.get('Project Name', 'Unnamed')}**")
+        st.subheader("All Projects by Status")
+
+        if "Status" in df_projects.columns and not df_projects.empty:
+            df_status_view = df_projects.copy()
+            df_status_view["Clean_Status"] = df_status_view["Status"].astype(str).str.strip()
+
+            # Custom ordering: 'In Progress' first, active statuses middle, 'Completed' last
+            def status_sort_key(status_name):
+                s = status_name.lower()
+                if s == "in progress":
+                    return (0, s)
+                elif s == "completed":
+                    return (2, s)
+                return (1, s)
+
+            unique_statuses = sorted(df_status_view["Clean_Status"].unique(), key=status_sort_key)
+
+            for status in unique_statuses:
+                group = df_status_view[df_status_view["Clean_Status"] == status]
+                is_in_progress = status.lower() == "in progress"
+
+                # Expand 'In Progress' by default; keep other statuses collapsible
+                with st.expander(f"**{status}** ({len(group)})", expanded=is_in_progress):
+                    for _, row in group.iterrows():
+                        proj_name = row.get("Project Name", "Unnamed")
+                        if is_in_progress:
+                            st.markdown(f"- :orange[**{proj_name}**]")
+                        elif status.lower() == "completed":
+                            st.markdown(f"- :green[{proj_name}]")
+                        else:
+                            st.markdown(f"- {proj_name}")
         else:
-            st.success("🎉 No active projects. Queue is empty!")
+            st.info("No projects or status values found.")
