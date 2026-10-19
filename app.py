@@ -1239,8 +1239,8 @@ with tab6:
 
     # 4. Proportional 3-Color Zones (0-3 Green, 3-5 Orange, 5-7 Red)
     zones = [
-        (0, 3, "rgba(76, 175, 80, 0.65)"),         # Green: 0-3
-        (3, 5, "rgba(255, 152, 0, 0.70)"),        # Orange: 3-5
+        (0, 3, "rgba(76, 175, 80, 0.65)"),        # Green: 0-3
+        (3, 5, "rgba(255, 152, 0, 0.70)"),       # Orange: 3-5
         (5, gauge_max, "rgba(244, 67, 54, 0.75)") # Red: 5-7
     ]
 
@@ -1353,25 +1353,35 @@ with tab6:
     col_gauge, col_list = st.columns([1.3, 1])
 
     with col_gauge:
-        st.plotly_chart(fig_gauge, use_container_width=True)
+        st.plotly_chart(fig_gauge, width="stretch")
 
     with col_list:
         st.subheader("All Projects by Status")
 
         if "Status" in df_projects.columns and not df_projects.empty:
-            df_status_view = df_projects.copy()
+            df_status_view = df_projects.dropna(subset=["Status"]).copy()
+            
+            # Stringify remaining values safely
             df_status_view["Clean_Status"] = df_status_view["Status"].astype(str).str.strip()
 
-            # Custom ordering: 'In Progress' first, active statuses middle, 'Completed' last
+            # Remove explicitly "stringified" nulls so they aren't generated as a category
+            valid_statuses = [
+                s for s in df_status_view["Clean_Status"].unique() 
+                if str(s).lower() not in ['nan', 'none', '<na>', '']
+            ]
+
+            
             def status_sort_key(status_name):
-                s = status_name.lower()
+                if pd.isna(status_name):
+                    return (3, "")
+                s = str(status_name).strip().lower()
                 if s == "in progress":
                     return (0, s)
                 elif s == "completed":
                     return (2, s)
                 return (1, s)
 
-            unique_statuses = sorted(df_status_view["Clean_Status"].unique(), key=status_sort_key)
+            unique_statuses = sorted(valid_statuses, key=status_sort_key)
 
             for status in unique_statuses:
                 group = df_status_view[df_status_view["Clean_Status"] == status]
