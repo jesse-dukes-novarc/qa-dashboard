@@ -337,9 +337,9 @@ with tab1:
         "Software Support",
         "Controls Support",
         "Product Support",
-        "Welding Team Performance",
+        "Welding Team Support",
         "Stress on QA Resources",
-        "QA Self-Reported Performance"
+        "QA Self-Evaluation"
     ]
 
     # Process individual scores, safely handling blank (NaN) cells
@@ -399,11 +399,11 @@ with tab1:
 
             m7, m8 = st.columns(2)
             m7.metric("Product Support", fmt_rating(p_data.get('Product Support')))
-            m8.metric("Welding Team Perf", fmt_rating(p_data.get('Welding Team Performance')))
+            m8.metric("Welding Team Perf", fmt_rating(p_data.get('Welding Team Support')))
 
             m9, m10 = st.columns(2)
             m9.metric("Stress on QA Resources", fmt_rating(p_data.get('Stress on QA Resources')))
-            m10.metric("QA Self-Reported Perf", fmt_rating(p_data.get('QA Self-Reported Performance')))
+            m10.metric("QA Self-Reported Perf", fmt_rating(p_data.get('QA Self-Evaluation')))
 
             m11, m12 = st.columns(2)
             m11.metric("Release Candidates", f"{int(p_data.get('Number of Release Candidates', 0))}")
@@ -428,7 +428,7 @@ with tab1:
             st.warning("No rating record found in the Ratings sheet for this project.")
 
     with col_proj_chart:
-        st.markdown(f"#### {selected_project} Performance Radar")
+        st.markdown(f"#### {selected_project} Project Retrospective Radar")
         if not project_rating_row.empty:
             r_closed = radar_r + [radar_r[0] if radar_r else None]
             theta_closed = categories + [categories[0]]
@@ -506,11 +506,11 @@ with tab1:
 
         a7, a8 = st.columns(2)
         a7.metric("Avg Product Support", safe_mean('Product Support'))
-        a8.metric("Avg Welding Team Perf", safe_mean('Welding Team Performance'))
+        a8.metric("Avg Welding Team Perf", safe_mean('Welding Team Support'))
 
         a9, a10 = st.columns(2)
         a9.metric("Avg Stress on QA", safe_mean('Stress on QA Resources'))
-        a10.metric("Avg QA Self-Reported Perf", safe_mean('QA Self-Reported Performance'))
+        a10.metric("Avg QA Self-Reported Perf", safe_mean('QA Self-Evaluation'))
 
         if "Number of Release Candidates" in df_ratings_avg.columns:
             rc_m = pd.to_numeric(df_ratings_avg["Number of Release Candidates"], errors="coerce").mean()
@@ -529,7 +529,7 @@ with tab1:
         st.metric("Overall Portfolio Average Rating", f"{portfolio_overall_avg:.1f} / 10" if cat_means else "N/A")
 
     with col_avg_chart:
-        st.markdown(f"#### Past {avg_time_range} Average Performance Radar")
+        st.markdown(f"#### Past {avg_time_range} Average Retrospective Radar")
         
         avg_scores = []
         for cat in categories:
@@ -830,10 +830,10 @@ with tab4:
 
 
 # =============================================================================
-# TAB 5: RATING AND PERFORMANCE OF T2 TICKETS
+# TAB 5: RATING AND RETROSPECTIVE OF T2 TICKETS
 # =============================================================================
 with tab5:
-    st.title("⚠️ T2 Performance & Ratings")
+    st.title("⚠️ T2 Retrospective & Ratings")
 
     time_range_t2 = st.radio(
         "Select Time Range:",
@@ -973,9 +973,9 @@ with tab5:
             "Software Support",
             "Controls Support",
             "Product Support",
-            "Welding Team Performance",
+            "Welding Team Support",
             "Stress on QA Resources",
-            "QA Self-Reported Performance"
+            "QA Self-Evaluation"
         ]
 
         valid_scores_t2 = []
@@ -1031,11 +1031,11 @@ with tab5:
 
                 m7, m8 = st.columns(2)
                 m7.metric("Product Support", fmt_rating(p_data_t2.get('Product Support')))
-                m8.metric("Welding Team Perf", fmt_rating(p_data_t2.get('Welding Team Performance')))
+                m8.metric("Welding Team Perf", fmt_rating(p_data_t2.get('Welding Team Support')))
 
                 m9, m10 = st.columns(2)
                 m9.metric("Stress on QA Resources", fmt_rating(p_data_t2.get('Stress on QA Resources')))
-                m10.metric("QA Self-Reported Perf", fmt_rating(p_data_t2.get('QA Self-Reported Performance')))
+                m10.metric("QA Self-Reported Perf", fmt_rating(p_data_t2.get('QA Self-Evaluation')))
 
                 m11, m12 = st.columns(2)
                 m11.metric("Release Candidates", f"{int(p_data_t2.get('Number of Release Candidates', 0))}")
@@ -1058,7 +1058,7 @@ with tab5:
                 st.warning("No rating record found in the T2 Ratings sheet for this project.")
 
         with col_proj_chart_t2:
-            st.markdown(f"#### {selected_project_t2} Performance Radar")
+            st.markdown(f"#### {selected_project_t2} Retrospective Radar")
             if not project_rating_row_t2.empty:
                 r_closed_t2 = radar_r_t2 + [radar_r_t2[0] if radar_r_t2 else None]
                 theta_closed_t2 = categories + [categories[0]]
@@ -1137,11 +1137,11 @@ with tab5:
 
             a7, a8 = st.columns(2)
             a7.metric("Avg Product Support", safe_mean_t2('Product Support'))
-            a8.metric("Avg Welding Team Perf", safe_mean_t2('Welding Team Performance'))
+            a8.metric("Avg Welding Team Perf", safe_mean_t2('Welding Team Support'))
 
             a9, a10 = st.columns(2)
             a9.metric("Avg Stress on QA", safe_mean_t2('Stress on QA Resources'))
-            a10.metric("Avg QA Self-Reported Perf", safe_mean_t2('QA Self-Reported Performance'))
+            a10.metric("Avg QA Self-Reported Perf", safe_mean_t2('QA Self-Evaluation'))
 
             if "Number of Release Candidates" in df_ratings_avg_t2.columns:
                 rc_m_t2 = pd.to_numeric(df_ratings_avg_t2["Number of Release Candidates"], errors="coerce").mean()
@@ -1158,7 +1158,7 @@ with tab5:
             st.metric("Overall T2 Average Rating", f"{portfolio_overall_avg_t2:.1f} / 10" if cat_means_t2 else "N/A")
 
         with col_avg_chart_t2:
-            st.markdown(f"#### Past {avg_time_range_t2} T2 Performance Radar")
+            st.markdown(f"#### Past {avg_time_range_t2} T2 Retrospective Radar")
             
             avg_scores_t2 = []
             for cat in categories:
