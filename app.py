@@ -1195,28 +1195,52 @@ with tab5:
 # =============================================================================
 with tab6:
     st.title("🚦 QA Bandwidth")
-    st.caption("Active project load across the QA team based strictly on 'In Progress' status.")
+    st.caption("Active project and T2 load across the QA team based strictly on 'In Progress' status.")
 
-    # 1. Filter Specifically for 'In Progress' Projects
-    if "Status" in df_projects.columns:
-        in_progress_df = df_projects[df_projects["Status"].astype(str).str.strip().str.lower() == "in progress"]
+    # 1. Combine Projects and T2 into a single DataFrame for status tracking
+    
+    # Process Projects
+    if "Status" in df_projects.columns and not df_projects.empty:
+        df_p = df_projects[["Project Name", "Status"]].copy()
+        df_p = df_p.rename(columns={"Project Name": "Item Name"})
+        df_p["Type"] = "Project"
+    else:
+        df_p = pd.DataFrame(columns=["Item Name", "Status", "Type"])
+
+    # Process T2s
+    if "Status" in df_t2.columns and not df_t2.empty:
+        df_t = df_t2[["T2 Ticket", "Status"]].copy()
+        df_t = df_t.rename(columns={"T2 Ticket": "Item Name"})
+        df_t["Type"] = "T2"
+    else:
+        df_t = pd.DataFrame(columns=["Item Name", "Status", "Type"])
+
+    # Concatenate both DataFrames
+    df_combined = pd.concat([df_p, df_t], ignore_index=True)
+
+    # 2. Filter Specifically for 'In Progress' Items
+    if not df_combined.empty and "Status" in df_combined.columns:
+        # Clean up status strings safely
+        df_combined["Clean_Status"] = df_combined["Status"].astype(str).str.strip()
+        
+        in_progress_df = df_combined[df_combined["Clean_Status"].str.lower() == "in progress"]
         in_progress_count = len(in_progress_df)
     else:
-        st.warning("⚠️ 'Status' column not found in Projects sheet. Defaulting count to 0.")
+        st.warning("⚠️ 'Status' column not found in data. Defaulting count to 0.")
         in_progress_count = 0
-        in_progress_df = pd.DataFrame()
+        df_combined = pd.DataFrame(columns=["Item Name", "Status", "Clean_Status", "Type"])
 
-    # 2. Dynamic Warning Banners (Green: 0-2, Orange: 3-4, Red: 5+)
+    # 3. Dynamic Warning Banners (Green: 0-2, Orange: 3-4, Red: 5+)
     if in_progress_count >= 5:
-        st.error(f"🚨 **HIGH BANDWIDTH WARNING:** The QA team currently has {in_progress_count} projects 'In Progress'. Approaching maximum capacity.")
+        st.error(f"🚨 **HIGH BANDWIDTH WARNING:** The QA team currently has {in_progress_count} items 'In Progress'. Approaching maximum capacity.")
     elif in_progress_count >= 3:
-        st.warning(f"⚠️ **MODERATE BANDWIDTH:** The QA team currently has {in_progress_count} projects 'In Progress'.")
+        st.warning(f"⚠️ **MODERATE BANDWIDTH:** The QA team currently has {in_progress_count} items 'In Progress'.")
 
     # Scale max to 7 (or in_progress_count if it exceeds 7)
     gauge_max = max(7, in_progress_count)
     val_clamped = min(in_progress_count, gauge_max)
 
-    # 3. Mathematical Geometry Setup
+    # 4. Mathematical Geometry Setup
     import numpy as np
 
     fig_gauge = go.Figure()
@@ -1237,7 +1261,7 @@ with tab6:
         
         return np.concatenate([x_out, x_in, [x_out[0]]]), np.concatenate([y_out, y_in, [y_out[0]]])
 
-    # 4. Proportional 3-Color Zones (0-3 Green, 3-5 Orange, 5-7 Red)
+    # 5. Proportional 3-Color Zones (0-3 Green, 3-5 Orange, 5-7 Red)
     zones = [
         (0, 3, "rgba(76, 175, 80, 0.65)"),        # Green: 0-3
         (3, 5, "rgba(255, 152, 0, 0.70)"),       # Orange: 3-5
@@ -1259,7 +1283,7 @@ with tab6:
                 mode="lines"
             ))
 
-    # 5. Draw Ticks & Numeric Labels (0 to 7)
+    # 6. Draw Ticks & Numeric Labels (0 to gauge_max)
     for i in range(gauge_max + 1):
         th = np.pi - (i / gauge_max) * np.pi
         x0, y0 = r_outer * np.cos(th), r_outer * np.sin(th)
@@ -1282,7 +1306,7 @@ with tab6:
             font=dict(size=14, color="#AAAAAA", family="Arial")
         )
 
-    # 6. Draw Triangular Needle
+    # 7. Draw Triangular Needle
     theta_needle = np.pi - (val_clamped / gauge_max) * np.pi
 
     tip_x = r_needle * np.cos(theta_needle)
@@ -1305,7 +1329,7 @@ with tab6:
         mode="lines"
     ))
 
-    # 7. Draw Pivot Hub Circle at (0, 0)
+    # 8. Draw Pivot Hub Circle at (0, 0)
     hub_angles = np.linspace(0, 2 * np.pi, 30)
     hub_r = 0.065
     fig_gauge.add_trace(go.Scatter(
@@ -1319,10 +1343,10 @@ with tab6:
         mode="lines"
     ))
 
-    # 8. Titles and Digital Readout
+    # 9. Titles and Digital Readout
     fig_gauge.add_annotation(
         x=0, y=1.28,
-        text="<b>Projects In Progress</b>",
+        text="<b>Combined Workload</b>",
         showarrow=False,
         font=dict(size=20, color="#FAFAFA", family="Arial")
     )
@@ -1338,7 +1362,7 @@ with tab6:
         align="center"
     )
 
-    # 9. Lock 1:1 Aspect Ratio
+    # 10. Lock 1:1 Aspect Ratio
     fig_gauge.update_xaxes(range=[-1.25, 1.25], visible=False, scaleanchor="y", scaleratio=1)
     fig_gauge.update_yaxes(range=[-0.45, 1.40], visible=False)
 
@@ -1349,27 +1373,22 @@ with tab6:
         margin=dict(l=20, r=20, t=10, b=10)
     )
 
-    # 10. Render Layout (Dial Gauge + Full Categorized Status Inventory)
+    # 11. Render Layout (Dial Gauge + Full Categorized Status Inventory)
     col_gauge, col_list = st.columns([1.3, 1])
 
     with col_gauge:
         st.plotly_chart(fig_gauge, width="stretch")
 
     with col_list:
-        st.subheader("All Projects by Status")
+        st.subheader("All Items by Status")
 
-        if "Status" in df_projects.columns and not df_projects.empty:
-            df_status_view = df_projects.dropna(subset=["Status"]).copy()
+        if not df_combined.empty:
             
-            # Stringify remaining values safely
-            df_status_view["Clean_Status"] = df_status_view["Status"].astype(str).str.strip()
-
             # Remove explicitly "stringified" nulls so they aren't generated as a category
             valid_statuses = [
-                s for s in df_status_view["Clean_Status"].unique() 
+                s for s in df_combined["Clean_Status"].unique() 
                 if str(s).lower() not in ['nan', 'none', '<na>', '']
             ]
-
             
             def status_sort_key(status_name):
                 if pd.isna(status_name):
@@ -1384,18 +1403,23 @@ with tab6:
             unique_statuses = sorted(valid_statuses, key=status_sort_key)
 
             for status in unique_statuses:
-                group = df_status_view[df_status_view["Clean_Status"] == status]
+                group = df_combined[df_combined["Clean_Status"] == status]
                 is_in_progress = status.lower() == "in progress"
 
                 # Expand 'In Progress' by default; keep other statuses collapsible
                 with st.expander(f"**{status}** ({len(group)})", expanded=is_in_progress):
                     for _, row in group.iterrows():
-                        proj_name = row.get("Project Name", "Unnamed")
+                        item_name = row.get("Item Name", "Unnamed")
+                        item_type = row.get("Type", "")
+                        
+                        # Add a tag to visually separate T2 vs Projects
+                        display_text = f"**{item_name}** `[{item_type}]`" if item_type else f"**{item_name}**"
+                        
                         if is_in_progress:
-                            st.markdown(f"- :orange[**{proj_name}**]")
+                            st.markdown(f"- :orange[{display_text}]")
                         elif status.lower() == "completed":
-                            st.markdown(f"- :green[{proj_name}]")
+                            st.markdown(f"- :green[{display_text}]")
                         else:
-                            st.markdown(f"- {proj_name}")
+                            st.markdown(f"- {display_text}")
         else:
-            st.info("No projects or status values found.")
+            st.info("No projects, T2 tickets, or status values found.")
