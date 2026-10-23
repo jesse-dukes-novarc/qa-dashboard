@@ -1236,8 +1236,8 @@ with tab6:
     elif in_progress_count >= 3:
         st.warning(f"⚠️ **MODERATE BANDWIDTH:** The QA team currently has {in_progress_count} items 'In Progress'.")
 
-    # Scale max to 7 (or in_progress_count if it exceeds 7)
-    gauge_max = max(7, in_progress_count)
+    # Scale max to 6 (or in_progress_count if it exceeds 7)
+    gauge_max = max(6, in_progress_count)
     val_clamped = min(in_progress_count, gauge_max)
 
     # 4. Mathematical Geometry Setup
