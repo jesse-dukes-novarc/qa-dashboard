@@ -1230,13 +1230,13 @@ with tab6:
         in_progress_count = 0
         df_combined = pd.DataFrame(columns=["Item Name", "Status", "Clean_Status", "Type"])
 
-    # 3. Dynamic Warning Banners (Green: 0-2, Orange: 3-4, Red: 5+)
-    if in_progress_count >= 5:
+# 3. Dynamic Warning Banners (Green: 0-2, Orange: 3, Red: 4+)
+    if in_progress_count >= 4:
         st.error(f"🚨 **HIGH BANDWIDTH WARNING:** The QA team currently has {in_progress_count} items 'In Progress'. Approaching maximum capacity.")
     elif in_progress_count >= 3:
         st.warning(f"⚠️ **MODERATE BANDWIDTH:** The QA team currently has {in_progress_count} items 'In Progress'.")
 
-    # Scale max to 6 (or in_progress_count if it exceeds 7)
+    # Scale max to 6 (or in_progress_count if it exceeds 6)
     gauge_max = max(6, in_progress_count)
     val_clamped = min(in_progress_count, gauge_max)
 
@@ -1261,6 +1261,27 @@ with tab6:
         
         return np.concatenate([x_out, x_in, [x_out[0]]]), np.concatenate([y_out, y_in, [y_out[0]]])
 
+    # 5. Proportional 3-Color Zones (0-3 Green, 3-4 Orange, 4-6 Red)
+    zones = [
+        (0, 3, "rgba(76, 175, 80, 0.65)"),        # Green: 0-3
+        (3, 4, "rgba(255, 152, 0, 0.70)"),       # Orange: 3-4
+        (4, gauge_max, "rgba(244, 67, 54, 0.75)") # Red: 4-6 (or beyond if overflowing)
+    ]
+
+    for z_start, z_end, z_color in zones:
+        if z_start < gauge_max:
+            actual_end = min(z_end, gauge_max)
+            x_band, y_band = create_arc_polygon(z_start, actual_end, gauge_max, r_inner, r_outer)
+            fig_gauge.add_trace(go.Scatter(
+                x=x_band,
+                y=y_band,
+                fill="toself",
+                fillcolor=z_color,
+                line=dict(color="rgba(0,0,0,0.15)", width=1),
+                hoverinfo="none",
+                showlegend=False,
+                mode="lines"
+            ))
     # 5. Proportional 3-Color Zones (0-3 Green, 3-5 Orange, 5-7 Red)
     zones = [
         (0, 3, "rgba(76, 175, 80, 0.65)"),        # Green: 0-3
