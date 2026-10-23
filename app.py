@@ -1282,27 +1282,6 @@ with tab6:
                 showlegend=False,
                 mode="lines"
             ))
-    # 5. Proportional 3-Color Zones (0-3 Green, 3-5 Orange, 5-7 Red)
-    zones = [
-        (0, 3, "rgba(76, 175, 80, 0.65)"),        # Green: 0-3
-        (3, 5, "rgba(255, 152, 0, 0.70)"),       # Orange: 3-5
-        (5, gauge_max, "rgba(244, 67, 54, 0.75)") # Red: 5-7
-    ]
-
-    for z_start, z_end, z_color in zones:
-        if z_start < gauge_max:
-            actual_end = min(z_end, gauge_max)
-            x_band, y_band = create_arc_polygon(z_start, actual_end, gauge_max, r_inner, r_outer)
-            fig_gauge.add_trace(go.Scatter(
-                x=x_band,
-                y=y_band,
-                fill="toself",
-                fillcolor=z_color,
-                line=dict(color="rgba(0,0,0,0.15)", width=1),
-                hoverinfo="none",
-                showlegend=False,
-                mode="lines"
-            ))
 
     # 6. Draw Ticks & Numeric Labels (0 to gauge_max)
     for i in range(gauge_max + 1):
